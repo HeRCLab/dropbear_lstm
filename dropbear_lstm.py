@@ -9,38 +9,62 @@ import matplotlib.pyplot as plt
 from keras.models import Sequential
 from keras.layers import Dense, LSTM, Flatten
 import matplotlib.pyplot as plt
-import tensorflow as tf    # issue with importing tendoeflow on
+import argparse
+import yaml
+import tensorflow as tf     # issue with importing tensorflow on
                             # tachyon due to its lack of AVX instructions
+                            # NOTE:  must use on higgs for GPU
 
-### SWEEP PARAMETERS:  modify as needed
+def parse_args():
+    parser = argparse.ArgumentParser(description='DROPBEAR model')
+    add_arg = parser.add_argument
+    add_arg('config', nargs='?', default='config.yaml', help='configuration file')
+    return parser.parse_args()
 
-# how much to downsample the acceleration data
-downsample_levels = np.arange(8,60,8)
-
-# how much history to keep in the lstm in terms of units of 25 samples at
-# the current acceleration sample rate.  thus,
-# # units = 25 * history
-# lstm memory in seconds = 25 * history / sample rate
-history_lengths = np.arange(1,10,1)
-
-# number of samples to time shift the acceleration relative to the pin
-# location.  in other words, how much time into the future are we predicting
-# the pin location given the acceleration (NOTE: see below, the implementation
-# of this might be bugged)
-time_shift = 0
-
-# how much of the training data should be visible to the training algorithm,
-# i.e. what is the training/testing data split.
-training_portion = np.float(1);
- 
-def create_model (units):
+def create_model (units,batchsize):
     model = Sequential()
-    model.add(LSTM(units,input_shape=(1,1),batch_size=1,stateful=True))
+    model.add(LSTM(units,input_shape=(1,1),batch_size=batchsize,stateful=True))
     model.add(Dense(1))
     model.compile(loss='mse',optimizer='adam')
     return model
 
-def main():   
+def load_config (configfile):
+    with open(configfile) as f:
+        config = yaml.load(f, Loader=yaml.FullLoader)
+    
+    ### SWEEP PARAMETERS:  modify as needed
+    # TODO: check for missing values and assign defaults
+
+    # how much to downsample the acceleration data
+    downsample_low = config['downsample']['start']
+    downsample_high = config['downsample']['end']
+    downsample_increment = config['downsample']['increment']
+    downsample_levels = np.arange(downsample_low,downsample_high+downsample_increment,downsample_increment)
+
+    # how much history to keep in the lstm in terms of units of 25 samples at
+    # the current acceleration sample rate.  thus,
+    # # units = 25 * history
+    # lstm memory in seconds = 25 * history / sample rate
+    history_low = config['history']['start']
+    history_high = config['history']['end']
+    history_increment = config['history']['increment']
+    history_lengths = np.arange(history_low,history_high+history_increment,history_increment)
+    
+    # number of samples to time shift the acceleration relative to the pin
+    # location.  in other words, how much time into the future are we predicting
+    # the pin location given the acceleration (NOTE: see below, the implementation
+    # of this might be bugged)
+    time_shift = config['time_shift']
+
+    # how much of the training data should be visible to the training algorithm,
+    # i.e. what is the training/testing data split.
+    training_portion = np.float(config['training_portion'])
+    return downsample_levels, history_lengths, time_shift, training_portion
+
+def main():
+    args = parse_args()
+    downsample_levels, history_lengths, time_shift, training_portion = load_config (args.config)
+
     # size of the space for parameter sweep
     arrsz = [len(downsample_levels), len(history_lengths)]
 
@@ -53,10 +77,9 @@ def main():
     data = None
     
     # open the data file and load the contents into data
-    with open("data_6_with_FFT.json", "r") as f:
-        data = json.loads(f.read())
-    
     print ( "loading data... ")
+    with open("data_6_with_FFT.json", "r") as f:
+        data = json.loads(f.read()) 
     
     # print informational messages about the sample rates of the pin location
     # and the vibration
@@ -65,7 +88,7 @@ def main():
     output_sample_rate = len(data["measured_pin_location"]) / data["measured_pin_location_tt"][-1]
     print("output_sample_rate: {}".format(output_sample_rate))
     
-    # create a mesh grid for plotting (why here?)
+    # create a mesh grid for plotting
     [xg, yg] = np.meshgrid(
         input_sample_rate / downsample_levels,
         history_lengths * 25 / input_sample_rate
@@ -73,6 +96,24 @@ def main():
     
     print("meshgrid shapes: {}, {}".format(xg.shape, yg.shape))
     
+    # used to log values in mesh grid
+    dd=0
+    hh=0
+    fignum=1
+
+    sample_rates = input_sample_rate / downsample_levels
+    
+    print("sample rates = ")
+    print(sample_rates)
+
+    num_units = np.zeros([len(sample_rates),len(history_lengths)])
+    for i in range(0,len(sample_rates)):
+        for j in range(0,len(history_lengths)):
+            num_units[i,j] =  25 / input_sample_rate * sample_rates[i] * history_lengths[j]
+
+    print("number of LSTM units =")
+    print(num_units)
+
     for downsample in downsample_levels:
         for history in history_lengths:
             # make sure to reset x and y since we modify them for resampling
@@ -87,7 +128,7 @@ def main():
     
             # downsample acceleration data
             #x = signal.decimate(x,downsample)
-            x = signal.resample(x,math.floor(x.shape[0]/downsample))
+            x = signal.resample(x,int(x.shape[0]/downsample))
     
             # upsample pin location data
             #frac = fr.Fraction(x.shape[0]/y.shape[0]).limit_denominator(1000)
@@ -109,7 +150,7 @@ def main():
             y = y[0:smallest]
     
             # extract the training set from x and y
-            training_samples = math.floor(training_portion*x.shape[0])
+            training_samples = int(training_portion*x.shape[0])
             x_train = x[0:training_samples]
             y_train = y[0:training_samples]
     
@@ -141,6 +182,8 @@ def main():
             # normalize
             x_train_norm = (x_train - mu_x) / sig_x
             y_train_norm = (y_train - mu_y) / sig_y
+            x_test_norm = (x_test - mu_x) / sig_x
+            y_test_norm = (y_test - mu_y) / sig_y
 
             # need to reshape data due to some inconvenient and seemingly nonsensical
             # requirement of keras's lstm layer
@@ -155,35 +198,67 @@ def main():
             # converted parameters
             current_sample_rate = input_sample_rate / downsample
             history_length = 25 / input_sample_rate * history
-            numHiddenUnits = math.floor(history_length*current_sample_rate)
+            numHiddenUnits = int(history_length*current_sample_rate)
+  
+            sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
+ 
+            batchsize = x.shape[0]
+
+            with tf.device('/gpu:0'): 
+                model = create_model(numHiddenUnits,batchsize)
+                model.fit(x_train_norm,y_train_norm,batch_size=batchsize,epochs=10,verbose=1)
+                model.reset_states()
     
-            model = create_model(numHiddenUnits)
-            model.fit(x_train_norm,y_train_norm,batch_size=1,epochs=10,verbose=1)
-            model.reset_states()
-    
-            y_train_pred_norm = model.predict(x_train_norm,batch_size=1)
+            y_train_pred_norm = model.predict(x_train_norm,batch_size=batchsize)
             
             # un-normalize predicted data
             
             y_train_pred = y_train_pred_norm * sig_y + mu_y;
-            rmse = math.sqrt(np.mean(np.square(y_train_pred - y_train)))
 
+            # the following line causes a runtime memory error, so I needed to expand the statement into a loop
+            #rmse = math.sqrt(np.mean(np.square(y_train_pred - y_train)))
+            # hacked version to avoid memory error:
+            size = y_train_pred.shape[0]
+            diffs = np.ndarray((size,),float)
+            for i in range(0,size):
+                diffs[i]=np.square(y_train_pred[i] - y_train[i])
+            rmse = math.sqrt(np.mean(diffs))
+            
+            rmse_res[dd,hh]=rmse;
+            
+            f = plt.figure(fignum)
+            fignum = fignum+1
             plt.subplot(3,1,1)
             plt.plot(y_train)
             plt.title('y train')
             plt.xlabel('time')
             plt.ylabel('position')
+
             plt.subplot(3,1,2)
-            plt.plot(ypred)
+            plt.plot(y_train_pred)
+            plt.xlabel('time')
             plt.ylabel('position')
-            plt.title('prediction')
+            plt.title("prediction for sample rate = %0.2f Hz and %d units" % (input_sample_rate/downsample),numHiddenUnits)
+
             plt.subplot(3,1,3)
-            plt.plot(ypred - y_train)
+            # another memory error...
+            #plt.plot(y_train_pred - y_train)
+            for i in range(0,size):
+                diffs[i]=y_train_pred[i] - y_train[i]
+            plt.plot(diffs)
             plt.xlabel('time')
             plt.ylabel('error')
-            plt.title('RMSE = ' + rmse)
-            plt.show()
+            plt.title("RMSE = %0.2f" % rmse)
+            f.show()
+
+            hh=hh+1
+        dd=dd+1
+        hh=0
+
+    plt.surf(xg,yg,rmse_res)
+    plt.colorbar();
+    plt.show() 
 
 if __name__ == '__main__':
-        main()
-        
+    main()
+

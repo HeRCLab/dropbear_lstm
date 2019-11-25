@@ -1,5 +1,7 @@
 #!/usr/bin/python3
 
+import IPython as IP
+
 import numpy as np
 import json
 import math
@@ -62,6 +64,7 @@ def load_config (configfile):
     return downsample_levels, history_lengths, time_shift, training_portion
 
 def main():
+    #IP.get_ipython().magic('reset -sf')
     args = parse_args()
     downsample_levels, history_lengths, time_shift, training_portion = load_config (args.config)
 
@@ -200,9 +203,11 @@ def main():
             history_length = 25 / input_sample_rate * history
             numHiddenUnits = int(history_length*current_sample_rate)
   
-            sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
+            # the following line verifies that Tensorflow has detected a target GPU
+            #sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
  
             batchsize = x.shape[0]
+            backsize = 1
 
             with tf.device('/gpu:0'): 
                 model = create_model(numHiddenUnits,batchsize)
@@ -238,7 +243,7 @@ def main():
             plt.plot(y_train_pred)
             plt.xlabel('time')
             plt.ylabel('position')
-            plt.title("prediction for sample rate = %0.2f Hz and %d units" % (input_sample_rate/downsample),numHiddenUnits)
+            plt.title("prediction for sample rate = %0.2f Hz and %d units" % ((input_sample_rate/downsample),numHiddenUnits))
 
             plt.subplot(3,1,3)
             # another memory error...

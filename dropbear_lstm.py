@@ -10,6 +10,7 @@ import os
 import matplotlib.pyplot as plt
 from keras.models import Sequential
 from keras.layers import Dense, LSTM, Flatten
+from keras.optimizers import Adam
 import matplotlib.pyplot as plt
 import argparse
 import yaml
@@ -27,7 +28,8 @@ def create_model (units,batchsize):
     model = Sequential()
     model.add(LSTM(units,input_shape=(1,1),batch_size=batchsize,stateful=True))
     model.add(Dense(1))
-    model.compile(loss='mse',optimizer='adam')
+    adjusted_optimizer = Adam(learning_rate=0.0005)
+    model.compile(loss='mse',optimizer=adjusted_optimizer)
     return model
 
 def load_config (configfile):

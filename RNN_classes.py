@@ -86,9 +86,11 @@ class LSTM:
         
 class Layer:
     '''do forward and backward pass for a layer '''  
-    def __init__(self, nInput, hidden_dim):
+    def __init__(self, nInput, hidden_dim, output_dim):
         self.hidden_dim = hidden_dim
         self.seq_len = nInput
+        self.output_dim = output_dim
+        print(self.output_dim)
         
     def setRandomWeights(self):
         Wxh = np.random.normal(0, 1, (self.hidden_dim, self.seq_len+1))
@@ -121,14 +123,41 @@ class Layer:
             prev_h = h_t
             prev_s = s_t
         _output = np.hstack(_output)
-        prediction = self.Why.dot(h_t)    
+        prediction = self.Why.dot(h_t)  
+        
         return prediction, _output
             
-    def doBackwards(self, dOutput):
-        
-        return
+    def doBackward(self, dOutput):
+        self.dW = np.zeros(self.W.shape)
+        dprev_s = np.zeros((self.hidden_dim, 1))
+        self.dWhy = dOutput.dot(self.remember_hidden[self.seq_len-1]['h'].T)
+        lstm=LSTM()
+        for t in reversed(range(self.seq_len)):
+            xt = np.zeros((self.x.shape[0]+1,1))
+            xt[t] = self.x[t]
+            xt[self.seq_len] = 1
+            prev_h = self.remember_hidden[t]['prev_h']
+            I_t = np.concatenate((xt,prev_h), axis=0)
+            dh = self.Why.T.dot(dOutput)
+            s_t = self.remember_hidden[t]['s']
+            prev_s = self.remember_hidden[t]['prev_s']
+            g_t = self.remember_z[t]['zt'][0]
+            i_t = self.remember_z[t]['zt'][1]
+            f_t = self.remember_z[t]['zt'][2]
+            o_t = self.remember_z[t]['zt'][3]
+            forward = [s_t, prev_s, g_t, i_t, f_t, o_t]
+            out1, dW_i = lstm.doBackwards(dh, dprev_s, forward, I_t)
+            dprev_s = out1[:]
+            self.dW += dW_i
+            _output = (self.dWhy, self.dW)
+        return _output
     
-    def updateWeights(self, learning_rate = 0.001):
+    def updateWeights(self, max_clip, min_clip, learning_rate):
+        if self.dW.max() > max_clip:
+            self.dW[self.dW>max_clip]= max_clip
+        if self.dW.min() < min_clip:
+            self.dW[self.dW<min_clip] = min_clip
+        
         self.Why -= learning_rate*self.dWhy
         self.W -= learning_rate*self.dW
         return self.Why, self.W
@@ -136,13 +165,13 @@ class Layer:
 class RecurrentNetwork:
     '''a recurrent neural network '''
     def __init__(self, layers):
-        '''layers = ( (nInputs, nOutputs, hidden_dim), ...) '''
+        '''layers = [ (nInputs, hidden_dim, output_dim), ...] '''
         self.nLayers = len(layers)
         self.I = [None]*(self.nLayers+1)
         self.dI = [None]*(self.nLayers+1)
-        self.layers = [ Layer(layers[0][0], layers[0][1]) ]
+        self.layers = [ Layer(layers[0][0], layers[0][1], layers[0][2]) ]
         for l in range(1,self.nLayers):
-            self.layers.append( Layer(layers[l][0], layers[l][1]) )
+            self.layers.append( Layer(layers[l][0], layers[l][1], layers[0][1]) )
         self.setRandomWeights()
         
     def setRandomWeights(self):
@@ -155,9 +184,29 @@ class RecurrentNetwork:
         for l in range(self.nLayers):
             prediction, self.I[l+1] = self.layers[l].doForward(self.I[l])
         return prediction, self.I[self.nLayers]
+    
+    def doBackward(self, dOutput):
+        self.dI[self.nLayers]=dOutput
+        for l in range(self.nLayers, 0, -1):
+            self.dI [l-1] = self.layers[l-1].doBackward(self.dI[l])
+        return
+    
+    def updateWeights(self, max_clip, min_clip, learning_rate):
+        for l in range(self.nLayers):
+            self.layers[l].updateWeights(max_clip, min_clip, learning_rate)
+        
         
 class ObjectiveFunction:
     '''loss function definition '''
-    def mseForward(self, pred, y):
-        J = (y-pred)**2/2
+    def __init__(self, pred, y):
+        self.y = y
+        self.pred = pred
+        
+    def mseForward(self):
+        J = (self.y-self.pred)**2/2
         return J
+    
+    def mseBackward(self):
+        dpred = self.pred - self.y
+        
+        return dpred

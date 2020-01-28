@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-import IPython as IP
+#import IPython as IP
 
 import numpy as np
 import json

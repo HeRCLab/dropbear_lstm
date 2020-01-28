@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-#import IPython as IP
+import IPython as IP
 
 import numpy as np
 import json
@@ -10,7 +10,6 @@ import os
 import matplotlib.pyplot as plt
 from keras.models import Sequential
 from keras.layers import Dense, LSTM, Flatten
-from keras.optimizers import Adam
 import matplotlib.pyplot as plt
 import argparse
 import yaml
@@ -28,8 +27,7 @@ def create_model (units,batchsize):
     model = Sequential()
     model.add(LSTM(units,input_shape=(1,1),batch_size=batchsize,stateful=True))
     model.add(Dense(1))
-    adjusted_optimizer = Adam(learning_rate=0.0005)
-    model.compile(loss='mse',optimizer=adjusted_optimizer)
+    model.compile(loss='mse',optimizer='adam')
     return model
 
 def load_config (configfile):
@@ -70,14 +68,14 @@ def train_model(units,x_train,y_train):
     # sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
 
     batchsize = x_train.shape[0]
-    batchsize = 1
+    #batchsize = 1
 
     with tf.device('/gpu:0'): 
         model = create_model(units,batchsize)
-        model.fit(x_train,y_train,batch_size=batchsize,epochs=10,verbose=1,optimizer='adam')
+        model.fit(x_train,y_train,batch_size=batchsize,epochs=10,verbose=1)
         model.reset_states()
 
-    y_train_pred_norm = model.predict(x_train_norm,batch_size=batchsize)
+    y_train_pred_norm = model.predict(x_train,batch_size=batchsize)
 
     return y_train_pred_norm
 
@@ -112,7 +110,7 @@ def main():
     # create a mesh grid for plotting
     [xg, yg] = np.meshgrid(
         input_sample_rate / downsample_levels,
-        history_lengths * 25 / input_sample_rate
+        history_lengths * 250 / input_sample_rate
     );
     
     print("meshgrid shapes: {}, {}".format(xg.shape, yg.shape))
@@ -146,76 +144,74 @@ def main():
             y[i] = y[i-1]
 
     for downsample in downsample_levels:
-        # downsample acceleration data
-        #x = signal.decimate(x,downsample)
-        x_resamp = signal.resample(x,int(x.shape[0]/downsample))
-    
-        # upsample pin location data
-        #frac = fr.Fraction(x.shape[0]/y.shape[0]).limit_denominator(1000)
-        #y = signal.resample(y,frac.numerator)
-        #y = signal.decimate(y,frac.denominator)
-        y_resamp = signal.resample(y,x_resamp.shape[0])
-    
-        # NOTE: this might not work as intended, since shifting the acceleration
-        # data to the right effectively shifts the pin location data to the left,
-        # making it so we predict the past, not the future as originally
-        # was the intent here
-        # TODO: need to express time_shift in units of the original sample rate!!!
-        x_resamp = x_resamp[time_shift:]
-        y_resamp = y_resamp[0:y.shape[0]-time_shift]
-    
-        # extract the training set from x and y
-        training_samples = int(training_portion*x_resamp.shape[0])
-        x_train = x_resamp[0:training_samples]
-        y_train = y_resamp[0:training_samples]
-    
-        if training_portion == 1:
-            x_test = [];
-            y_test = [];
-        else:
-            x_test = x_resamp[training_samples:]
-            x_test = y_resamp[training_samples:]
-        
-        # get mu and signal for x and y
-        # note:  x and y are type sp.ndarray after having been returned
-        # from sp.decimate().  do we need to typecast them to np.array?
-        # answer:  apparently not, since according to the internets, these
-        # types are the same, since array() only actually creates an
-        # initializes ndarray.
-        # is this array type compatible with tensorflow training?  this remains
-        # to be seen...
-        mu_x = x_train.mean()
-        mu_y = y_train.mean()
-        sig_x = x_train.std()
-        sig_y = y_train.std()
-        
-        # TODO: check to see if we can remove these lines
-        x_train = np.asarray(x_train)
-        y_train = np.asarray(y_train)
-        x_test = np.asarray(x_test)
-        y_test = np.asarray(y_test)
-        
-        # normalize
-        x_train_norm = (x_train - mu_x) / sig_x
-        y_train_norm = (y_train - mu_y) / sig_y
-        x_test_norm = (x_test - mu_x) / sig_x
-        y_test_norm = (y_test - mu_y) / sig_y
-
-        # need to reshape data due to some inconvenient and seemingly nonsensical
-        # requirement of keras's lstm layer
-        reshape_3 = lambda x: x.reshape((x.shape[0], 1, 1))
-        x_train_norm = reshape_3(x_train_norm)
-        x_test_norm = reshape_3(x_test_norm)
-        
-        reshape_2 = lambda x: x.reshape((x.shape[0], 1))
-        y_train_norm = reshape_2(y_train_norm)
-        y_test_norm = reshape_2(y_test_norm)
- 
         for history in history_lengths:
     
+            # downsample acceleration data
+            #x = signal.decimate(x,downsample)
+            x_resamp = signal.resample(x,int(x.shape[0]/downsample))
+    
+            # upsample pin location data
+            #frac = fr.Fraction(x.shape[0]/y.shape[0]).limit_denominator(1000)
+            #y = signal.resample(y,frac.numerator)
+            #y = signal.decimate(y,frac.denominator)
+            y_resamp = signal.resample(y,x_resamp.shape[0])
+    
+            # NOTE: this might not work as intended, since shifting the acceleration
+            # data to the right effectively shifts the pin location data to the left,
+            # making it so we predict the past, not the future as originally
+            # was the intent here 
+            x_resamp = x_resamp[time_shift:]
+            y_resamp = y_resamp[0:y_resamp.shape[0]-time_shift]
+    
+            # extract the training set from x and y
+            training_samples = int(training_portion*x_resamp.shape[0])
+            x_train = x_resamp[0:training_samples]
+            y_train = y_resamp[0:training_samples]
+    
+            if training_portion == 1:
+                x_test = [];
+                y_test = [];
+            else:
+                x_test = x_resamp[training_samples:]
+                x_test = y_resamp[training_samples:]
+            
+            # get mu and signal for x and y
+            # note:  x and y are type sp.ndarray after having been returned
+            # from sp.decimate().  do we need to typecast them to np.array?
+            # answer:  apparently not, since according to the internets, these
+            # types are the same, since array() only actually creates an
+            # initializes ndarray.
+            # is this array type compatible with tensorflow training?  this remains
+            # to be seen...
+            mu_x = x_train.mean()
+            mu_y = y_train.mean()
+            sig_x = x_train.std()
+            sig_y = y_train.std()
+    
+            x_train = np.asarray(x_train)
+            y_train = np.asarray(y_train)
+            x_test = np.asarray(x_test)
+            y_test = np.asarray(y_test)
+            
+            # normalize
+            x_train_norm = (x_train - mu_x) / sig_x
+            y_train_norm = (y_train - mu_y) / sig_y
+            x_test_norm = (x_test - mu_x) / sig_x
+            y_test_norm = (y_test - mu_y) / sig_y
+
+            # need to reshape data due to some inconvenient and seemingly nonsensical
+            # requirement of keras's lstm layer
+            reshape_3 = lambda x: x.reshape((x.shape[0], 1, 1))
+            x_train_norm = reshape_3(x_train_norm)
+            x_test_norm = reshape_3(x_test_norm)
+        
+            reshape_2 = lambda x: x.reshape((x.shape[0], 1))
+            y_train_norm = reshape_2(y_train_norm)
+            y_test_norm = reshape_2(y_test_norm)
+ 
             # converted parameters
             current_sample_rate = input_sample_rate / downsample
-            history_length = 25 / input_sample_rate * history
+            history_length = 250 / input_sample_rate * history
             numHiddenUnits = int(history_length*current_sample_rate)
             
             # train the model

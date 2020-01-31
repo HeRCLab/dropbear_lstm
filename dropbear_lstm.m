@@ -167,21 +167,21 @@ for downsample = downsample_levels
 end
 
 figure;
-surf(xg,yg,storage);
+surf(xg,yg,storage');
 title('Nominal storage requirements for LSTM structural model');
 xlabel('Sample rate (Hz)');
 ylabel('History length (s)');
 zlabel('Model storage (KiB)');
 
 figure;
-surf(xg,yg,throughput);
+surf(xg,yg,throughput');
 title('Nominal throughput requirements for LSTM structural model');
 xlabel('Sample rate (Hz)');
 ylabel('History length (s)');
 zlabel('Throughput (Mops/s)');
 
 figure;
-surf(xg,yg,rmse_res);
+surf(xg,yg,rmse_res');
 title('Accuracy of LSTM structural model');
 xlabel('Sample rate (Hz)');
 ylabel('History length (s)');

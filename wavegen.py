@@ -1,5 +1,6 @@
 # Sine wave generator/mixer.
-
+import json
+import datetime
 import numpy as np
 from scipy import signal as sg
 import matplotlib.pyplot as plt
@@ -39,3 +40,13 @@ if __name__ == '__main__':
     fig.suptitle('Combining signals at different frequencies', fontsize=15)
     fig.canvas.set_window_title('Signals')
     plt.show()
+
+    # Export data as JSON.
+    out = {
+        "date_time": str(datetime.datetime.now(datetime.timezone.utc)),
+        "acceleration_data": list(combined),
+        "accelerometer_sample_rate": sampling_rate,
+        "time_accelerometer_aquire_start": 0.0,
+        "time_acceleration_data": [float(y) for y in x],
+    }
+    print(json.dumps(out))

@@ -26,6 +26,7 @@ def parse_args():
     parser.add_argument('-f', '--filename', type=str, help="Filename of JSON waveform data to read in.")
     parser.add_argument('-t', '--training-ratio', type=float, help="Ratio of incoming data to use for training, on a scale of 0.0-1.0 (default: 0.1)")
     parser.add_argument('-p', '--plot', action="store_true", help="Plot using matplotlib. (default: False)")
+    parser.add_argument('--use-gpu', action="store_true", help="Use GPU for accelerating model training. (default: False)")
 
     return parser.parse_args()
 
@@ -60,7 +61,7 @@ def train_model(units, x_train, y_train, history_length, epochs=10, want_gpu=Fal
     if want_gpu:
         with tf.device('/gpu:0'): 
             model = create_model(units, history_length)
-            model.fit(x_train, y_train, epochs=epochs, verbose=1)
+            model.fit(x_train, y_train, epochs=epochs, verbose=0)
             #model.reset_states() # Only needed for stateful LSTM.
     else:
         model = create_model(units, history_length)
@@ -77,7 +78,7 @@ def main():
     # TODO: Want to predict next sample, and continue to do so until next window ready. (Extreme case is window_size=1, which would be a retrain on each new sample ingested.)
     
     # Read contents of file (if provided), else read from stdin.
-    print ( "loading data... ")
+    #print ( "loading data... ")
     data = None
     if args.filename is not None:
         with open(args.filename, "r") as f:
@@ -99,12 +100,13 @@ def main():
     training_window = args.training_window
     history_length = args.history
     prev_model = None
+    use_gpu = args.use_gpu
 
     y_predicted = [0 for x in range(0, training_window)] # Pack with zeros for first training window.
     y_autopredicted = [0 for x in range(0, training_window)] # Pack with zeros for first training window.
 
     # Online training fun
-    print("Number of windows: {}".format(len(range(0, len(x)-prediction_time-training_window, training_window))))
+    #print("Number of windows: {}".format(len(range(0, len(x)-prediction_time-training_window, training_window))))
     for i in range(0, len(x)-prediction_time-training_window, training_window):
         start_train = i
         end_train = i + training_window
@@ -135,7 +137,7 @@ def main():
         # TODO
 
         # Train the model + get predictions.
-        model = train_model(units, x_train, y_train, history_length, epochs=epochs)
+        model = train_model(units, x_train, y_train, history_length, epochs=epochs, want_gpu=use_gpu)
         print("x_train shape: {}".format(x_train.shape))
         y_pred = model.predict(x_train)
 

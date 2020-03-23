@@ -46,8 +46,11 @@ phase = 1.1;
 t = x * 2*pi * frequency + phase;
 signal2 = signal2 + amplitude * sin(t);
 
-signal = [signal1(1,1:floor(size(signal1,2)/2)),...
-          signal2(1,1:ceil(size(signal2,2)/2))];
+%signal = [signal1(1,1:floor(size(signal1,2)/2)),...
+%          signal2(1,1:ceil(size(signal2,2)/2))];
+
+% don't switch signals for now
+signal = signal1;
 
 % plot original signal
 %myfig1 = figure;
@@ -199,7 +202,7 @@ for i = 1:training_window:numel(signal_sub)-prediction_time-training_window-1
 
     rmse = mean(error.^2)^.5;
 
-    fprintf('rms of segment training window %d = %0.4f\n',floor((i-1)/training_window)+1,rmse);
+    fprintf('rms of segment training window %d = %0.4e\n',floor((i-1)/training_window)+1,rmse);
 
     %figure;
     %plot(x_sub,signal_pred);
@@ -218,7 +221,7 @@ for i=1:training_window+prediction_time-1
     window_plot(1,i)=val;
     val = val + 1;
     if val>min_val+range
-        val = min_val;
+        val = min_val;  
     end
 end
 
@@ -235,6 +238,6 @@ errors = signal_sub(training_window+prediction_time:end)-...
          signal_pred(training_window+prediction_time:end);
 
 rmse = mean(errors.^2)^.5;
-str = sprintf('predicted signal, rms = %0.4f',rmse);
+str = sprintf('predicted signal, rms = %0.4e',rmse);
 title(str);
 ylim([min_val,min_val+range]);

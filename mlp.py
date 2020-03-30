@@ -26,6 +26,7 @@ def parse_args():
     parser.add_argument('-f', '--filename', type=str, help="Filename of JSON waveform data to read in.")
     parser.add_argument('-t', '--training-ratio', type=float, help="Ratio of incoming data to use for training, on a scale of 0.0-1.0 (default: 0.1)")
     parser.add_argument('-p', '--plot', action="store_true", help="Plot using matplotlib. (default: False)")
+    parser.add_argument('--show-rmse-per-window', action="store_true", help="Display RMSE values for each training window. (default: False)")
     parser.add_argument('--use-gpu', action="store_true", help="Use GPU for accelerating model training. (default: False)")
 
     return parser.parse_args()
@@ -138,7 +139,7 @@ def main():
 
         # Train the model + get predictions.
         model = train_model(units, x_train, y_train, history_length, epochs=epochs, want_gpu=use_gpu)
-        print("x_train shape: {}".format(x_train.shape))
+        #print("x_train shape: {}".format(x_train.shape))
         y_pred = model.predict(x_train)
 
         prev_model = model # Swap in the last window's model.
@@ -151,7 +152,7 @@ def main():
         for i in range(0, size):
             diffs[i] = np.square(y_pred[i] - y_train[i])
         rmse = math.sqrt(np.mean(diffs))
-        print("RMSE {}".format(rmse))
+        #print("RMSE {}".format(rmse))
 
         # AUTO-PREDICTION
         # Attempt to predict the entire next window by iteratively predicting forward in time.
@@ -168,6 +169,14 @@ def main():
                 j = 0
 
     y_predicted += [0 for x in range(0, training_window)]
+
+    # Computed global RMS.
+    size = len(y_predicted)-(training_window*2)
+    diffs = np.ndarray((size,), float)
+    for i in range(0, size):
+        diffs[i] = np.square(y_predicted[i+training_window] - x[i+training_window])
+    rmse = math.sqrt(np.mean(diffs))
+    print("Global RMSE: {}".format(rmse))
 
     # Plot only if the user asked for plotting.
     if args.plot:

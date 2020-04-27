@@ -75,14 +75,19 @@ if __name__ == '__main__':
     elif args.from_format == "json":
         dataset = json.loads(f.read())
     elif args.from_format == "csv":
-        print("Not implemented yet!")
-        exit(1)
+        reader = csv.DictReader(f)
+        times = []
+        for row in reader:
+            dataset["acceleration_data"].append(float(row["Observation"]))
+            if len(times) < 2:
+                times.append(float(row["Time"]))
+        if len(times) == 2:
+            dataset["accelerometer_sample_rate"] = 1.0 / (times[1])
 
     # Write out the converted data.
     if args.to_format == "json":
         print(json.dumps(dataset))
     elif args.to_format == "csv":
-        print("Not implemented yet!")
+        print("Not implemented yet.")
         exit(1)
-
     f.close()

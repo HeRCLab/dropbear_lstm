@@ -77,7 +77,13 @@ if __name__ == '__main__':
     elif args.from_format == "csv":
         reader = csv.DictReader(f)
         times = []
+        dataset["time_data"] = []
+        dataset["voltage_data"] = []
+        dataset["force_data"] = []
         for row in reader:
+            dataset["time_data"].append(float(row["Time"]))
+            dataset["voltage_data"].append(float(row["Voltage"]))
+            dataset["force_data"].append(float(row["Force"]))
             dataset["acceleration_data"].append(float(row["Observation"]))
             if len(times) < 2:
                 times.append(float(row["Time"]))
@@ -88,6 +94,30 @@ if __name__ == '__main__':
     if args.to_format == "json":
         print(json.dumps(dataset))
     elif args.to_format == "csv":
-        print("Not implemented yet.")
-        exit(1)
+        # If time axis not present, create a synthetic one, using sample rate.
+        if "time_data" not in dataset.keys():
+            time_delta = 1.0 / dataset["accelerometer_sample_rate"]
+            dataset["time_data"] = []
+            current_time = 0.0
+            for i in range(0, len(dataset["acceleration_data"])):
+                dataset["time_data"].append(current_time)
+                current_time += time_delta
+        # If voltage axis not present, create a synthetic zeroed-out one.
+        if "voltage_data" not in dataset.keys():
+            dataset["voltage_data"] = [0.0 for x in range(0, len(dataset["acceleration_data"]))]
+        # If force axis not present, create a synthetic zeroed-out one.
+        if "force_data" not in dataset.keys():
+            dataset["force_data"] = [0.0 for x in range(0, len(dataset["acceleration_data"]))]
+        fields = ["Time", "Voltage", "Force", "Observation"]
+        writer = csv.DictWriter(sys.stdout, fieldnames=fields)
+        writer.writeheader()
+        for i in range(0, len(dataset["acceleration_data"])):
+            out = {
+                "Time": dataset["time_data"][i],
+                "Voltage": dataset["voltage_data"][i],
+                "Force": dataset["force_data"][i],
+                "Observation": dataset["acceleration_data"][i],
+            }
+            writer.writerow(out)
+
     f.close()

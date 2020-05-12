@@ -6,6 +6,7 @@ import math
 import json
 import collections
 import argparse
+from datetime import datetime
 import numpy as np
 import scipy.signal as signal
 import matplotlib.pyplot as plt
@@ -179,7 +180,25 @@ def main():
     for i in range(0, size):
         diffs[i] = np.square(y_predicted[i+training_window] - x[i+training_window])
     rmse = math.sqrt(np.mean(diffs))
-    print("Global RMSE: {}".format(rmse))
+    #print("Global RMSE: {}".format(rmse))
+
+    # Print JSON blob for other tools to consume.
+    out = {
+        "author": "Philip Conrad",
+        "algorithm": "window-mlp",
+        "activation": "linear",
+        "dataset": ["unknown", args.filename][args.filename is not None],
+        "creation_ts": datetime.utcnow().isoformat(),
+        "forecast_length": 1,
+        "prediction_gap": 0,
+        "training_window_length": training_window,
+        "sample_window_length": history_length,
+        "epochs": epochs,
+        "layers": "-".join([str(x) for x in units]),
+        "rmse_global": rmse,
+        "metadata": {},
+    }
+    print(json.dumps(out))
 
     # Plot only if the user asked for plotting.
     if args.plot:

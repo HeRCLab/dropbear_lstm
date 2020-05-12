@@ -9,8 +9,8 @@ import argparse
 import numpy as np
 import scipy.signal as signal
 import matplotlib.pyplot as plt
-from keras.models import Sequential
-from keras.layers import Dense, LSTM, Flatten, Input
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, LSTM, Flatten, Input
 import matplotlib.pyplot as plt
 import tensorflow as tf     # issue with importing tensorflow on
                             # tachyon due to its lack of AVX instructions

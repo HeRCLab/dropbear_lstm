@@ -20,7 +20,7 @@ import tensorflow as tf     # issue with importing tensorflow on
 def parse_args():
     parser = argparse.ArgumentParser(description='ANN/MLP Model')
     parser.add_argument('-e', '--epochs', type=int, default=10, help="Number of epochs to spend training the network. (default: 10)")
-    parser.add_argument('-u', '--units', action="append", default=[1], help="Number of units in hidden layer. Providing this argument more than once will add additional hidden layers. (default: 1)")
+    parser.add_argument('-u', '--units', action="append", default=[], help="Number of units in hidden layer. Providing this argument more than once will add additional hidden layers. (default: 1)")
     parser.add_argument('--history', '--history-length', type=int, default=10, help="Number of samples in the history buffer. (default: 10)")
     parser.add_argument('-w', '--training-window', type=int, default=40, help="Number of samples in each training window. (default: 40)")
     parser.add_argument('-f', '--filename', type=str, help="Filename of JSON waveform data to read in.")
@@ -96,7 +96,10 @@ def main():
     x = np.array(data["acceleration_data"])
 
     epochs = args.epochs
-    units = [int(x) for x in args.units]
+    if len(args.units) > 0:
+        units = [int(x) for x in args.units]
+    else:
+        units = [1]
     prediction_time = 1
     training_window = args.training_window
     history_length = args.history

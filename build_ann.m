@@ -1,12 +1,26 @@
-function build_ann = build_ann (x_train,y_train,neurons,epochs)
+function build_ann = build_ann (x_train,y_train,neurons,epochs,varargin)
 
-% randomly initilize weights
-weights_hidden = cell(1,size(neurons,2));
-weights_hidden{1,1} = .1 * randn(neurons(1),size(x_train,2));
-for i=2:size(neurons,2)
-    weights_hidden{1,i} = .1 * randn(neurons(i),neurons(i-1));
+if nargin==5
+    weights_hidden = varargin{1}.weights_hidden;
+    bias_hidden = varargin{1}.bias_hidden;
+    weights_output = varargin{1}.weights_output;
+    bias_output = varargin{1}.bias_output;
+else
+    % randomly initilize weights
+    weights_hidden = cell(1,size(neurons,2));
+    weights_hidden{1,1} = .1 * randn(neurons(1),size(x_train,2));
+    for i=2:size(neurons,2)
+        weights_hidden{1,i} = .1 * randn(neurons(i),neurons(i-1));
+    end
+    weights_output = .1 * randn(size(y_train,2),neurons(size(neurons,2)));
+        
+    % allocate and initilize biases to 0
+    bias_hidden = cell(1,size(neurons,2));
+    for i=1:size(neurons,2)
+        bias_hidden{1,i} = zeros(1,size(weights_hidden{i},1));
+    end
+    bias_output = zeros(1,size(weights_output,1));
 end
-weights_output = .1 * randn(size(y_train,2),neurons(size(neurons,2)));
 
 % allocate deltas
 delta_hidden = cell(1,size(neurons,2));
@@ -15,15 +29,8 @@ for i=1:size(neurons,2)
 end
 delta_output = zeros(1,size(weights_output,1));
 
-% allocate and initilize biases to 0
-bias_hidden = cell(1,size(neurons,2));
-for i=1:size(neurons,2)
-    bias_hidden{1,i} = zeros(1,size(weights_hidden{i},1));
-end
-bias_output = zeros(1,size(weights_output,1));
-
 % setup
-alpha = 0.00005;
+alpha = 0.01;
 
 error_progression=zeros(1,epochs);
 

@@ -13,9 +13,19 @@ struct params {
 	float time;
 	float *freqs;
 	float *phases;
+	float *amps;
 };
 
 typedef struct params * PARAMS;
+
+struct signal {
+	float *t;
+	float *s;
+	int points;
+	float sample_rate;
+};
+
+typedef struct signal * SIGNAL;
 
 struct layer {
 	int isinput;
@@ -28,20 +38,27 @@ struct layer {
 	struct layer *next;
 };
 
-void generate_synthetic_data (float **signal,PARAMS myparams) {
+void generate_synthetic_data (PARAMS myparams,SIGNAL mysignal) {
 	// generate baseline time array
 	int points = (int)ceilf(myparams->sample_rate * myparams->time);
-	float sample_period = myparams->time / myparams->sample_rate;
+	float sample_period = 1.f / myparams->sample_rate;
 	
-	*signal = (float *)malloc(sizeof(float) * points);
+	// allocate time and signal arrays
+	mysignal->s = (float *)malloc(sizeof(float) * points);
+	mysignal->t = (float *)malloc(sizeof(float) * points);
 
+	// synthesize
 	for (int i=0;i<points;i++) {
-		(*signal)[i]=0.f;
-		for (int j=0;myparams->freqs[j]!=0.f;j++)
-			(*signal)[i] += sinf(2.f*M_PI*myparams->freqs[j]+myparams->phases[j]*sample_period * (float)i);
+		mysignal->s[i]=0.f;
+		mysignal->t[i]=sample_period * (float)i;
+		for (int j=0;myparams->freqs[j]!=0.f;j++) {
+			mysignal->s[i] += myparams->amps[j]*sinf(2.f*M_PI*myparams->freqs[j]*mysignal->t[i] + myparams->phases[j]);
+		}
 	}
 
-		
+	mysignal->points = points;
+	
+	mysignal->sample_rate = myparams->sample_rate;
 }
 
 void forward_pass (struct layer *mlp) {
@@ -98,18 +115,25 @@ void update_weights (struct layer *mlp,float alpha) {
 	}
 }
 
-void subsample (float *out,float *in,int len,float subsample_rate) {
-	for (int i=0;i<(int)ceilf(len/subsample_rate);i++) {
+void subsample (SIGNAL in_signal,SIGNAL out_signal,float subsample_rate) {
+	int len = in_signal->points;
+	int len_new = out_signal->points = ceil(len / subsample_rate);
+	
+	out_signal->sample_rate = in_signal->sample_rate/subsample_rate;
+	
+	for (int i=0;i<len_new;i++) {
 		float position = (float)i * subsample_rate;
 		float position_frac = position - floorf(position);
 		int position_int = (int)floorf(position);
-		out[i] = (1.f - position_frac)*in[position_int] + position_frac*in[position_int+1];
+		out_signal->s[i] = (1.f - position_frac)*
+					in_signal->s[position_int] +
+					position_frac*
+					in_signal->s[position_int+1];
+		out_signal->t[i] = out_signal->sample_rate * (float)i;
 	}
 }
 
-int main () {
-	// set up signal parameters
-	PARAMS myparams = (PARAMS)malloc(sizeof(struct params));
+void initialize_signal_parameters (PARAMS myparams) {
 	myparams->freqs = (float*)malloc(sizeof(float)*4);
 	myparams->freqs[0]=10;
 	myparams->freqs[1]=37;
@@ -120,47 +144,99 @@ int main () {
 	myparams->phases[1]=1;
 	myparams->phases[2]=2;
 	myparams->phases[3]=0;
+	myparams->amps = (float*)malloc(sizeof(float)*4);
+	myparams->amps[0]=1;
+	myparams->amps[1]=2;
+	myparams->amps[2]=3;
+	myparams->amps[3]=4;
 	myparams->time = 2.f;
 	myparams->sample_rate=SAMPLE_RATE;
+}
 
-	float *signal;
-	generate_synthetic_data (&signal,myparams);
+void initialize_mlp (struct layer *layers) {
+	layers[0].isinput=1;
+	layers[0].neurons=HISTORY_LENGTH;
+	layers[0].prev=0;
+	layers[0].next=&layers[1];
+
+	layers[1].outputs=(float*)malloc(sizeof(float)*HISTORY_LENGTH);
+	layers[1].isinput=0;
+	layers[1].neurons=HIDDEN_SIZE;
+	layers[1].prev=&layers[0];
+	layers[1].next=&layers[2];
+	layers[1].weights=(float*)malloc(sizeof(float)*HIDDEN_SIZE*HISTORY_LENGTH);
+	
+	for (int i=0;i<HIDDEN_SIZE*HISTORY_LENGTH;i++) layers[1].weights[i]=(float)rand()/RAND_MAX;
+	layers[1].biases=(float*)malloc(sizeof(float)*HIDDEN_SIZE);
+	for (int i=0;i<HIDDEN_SIZE;i++) layers[1].biases[i]=0.f;
+	layers[1].outputs=(float*)malloc(sizeof(float)*HIDDEN_SIZE);
+	layers[1].deltas=(float*)malloc(sizeof(float)*HIDDEN_SIZE);
+
+	layers[2].isinput=1;
+	layers[2].neurons=1;
+	layers[2].prev=&layers[1];
+	layers[2].next=0;
+	layers[2].weights=(float*)malloc(sizeof(float)*HIDDEN_SIZE);
+	layers[2].outputs=(float*)malloc(sizeof(float));
+	layers[2].deltas=(float *)malloc(sizeof(float));
+	layers[2].biases=(float *)malloc(sizeof(float));
+	layers[2].biases[0]=0.f;
+}
+
+void plot (SIGNAL mysignal,char *title) {
+	// dump signal
+	char str[4096];
+	
+	sprintf(str,"/usr/bin/gnuplot -p -e \""
+			"set title '%s';"
+			"set xlabel 'time (s)';"
+			"set ylabel 'accel';"
+			"set key off;"
+			"plot '<cat' with lines;"
+			"\"",title);
+			
+	FILE *myplot = popen(str,"w");
+	
+	if (!myplot) {
+		perror("Error opening gnuplot");
+		exit(1);
+	}
+	
+	for (int i=0;i<mysignal->points;i++) {
+		fprintf (myplot,"%0.4f %0.4f\n",mysignal->t[i],mysignal->s[i]);
+	}
+	
+	fclose(myplot);
+}
+
+int main () {
+	// set up signal
+	PARAMS myparams = (PARAMS)malloc(sizeof(struct params));
+	initialize_signal_parameters(myparams);
+	
+	// synthesize and plot signal
+	SIGNAL mysignal = (SIGNAL)malloc(sizeof(struct signal));
+	generate_synthetic_data (myparams,mysignal);
+	plot(mysignal,"original signal");
+	
+	SIGNAL mysignal_subsampled = (SIGNAL)malloc(sizeof(struct signal));
+	subsample(mysignal,mysignal_subsampled,0.25f);
+	plot(mysignal_subsampled,"original signal subsampled");
+	
+	return 0;
 
 	// set up MLP
-	struct layer layer1,layer2,layer3;
-	layer1.isinput=1;
-	layer1.neurons=HISTORY_LENGTH;
-	layer1.prev=0;
-	layer2.outputs=(float*)malloc(sizeof(float)*HISTORY_LENGTH);
-	layer1.next=&layer2;
-
-	layer2.isinput=0;
-	layer2.neurons=HIDDEN_SIZE;
-	layer2.prev=&layer1;
-	layer2.next=&layer3;
-	layer2.weights=(float*)malloc(sizeof(float)*HIDDEN_SIZE*HISTORY_LENGTH);
-	for (int i=0;i<HIDDEN_SIZE*HISTORY_LENGTH;i++) layer2.weights[i]=(float)rand()/RAND_MAX;
-	layer2.biases=(float*)malloc(sizeof(float)*HIDDEN_SIZE);
-	for (int i=0;i<HIDDEN_SIZE;i++) layer2.biases[i]=0.f;
-	layer2.outputs=(float*)malloc(sizeof(float)*HIDDEN_SIZE);
-	layer2.deltas=(float*)malloc(sizeof(float)*HIDDEN_SIZE);
-
-	layer3.isinput=1;
-	layer3.neurons=1;
-	layer3.prev=&layer2;
-	layer3.next=0;
-	layer3.weights=(float*)malloc(sizeof(float)*HIDDEN_SIZE);
-	layer3.outputs=(float*)malloc(sizeof(float));
-	layer3.deltas=(float *)malloc(sizeof(float));
-	layer3.biases=(float *)malloc(sizeof(float));
-	layer3.biases[0]=0.f;
-
+	struct layer layers[3];
+	initialize_mlp(layers);
 	
+	//plot(mysignal);	
 
 	// clean up
 	free(myparams->freqs);
 	free(myparams->phases);
 	free(myparams);
-	free(signal);
+	free(mysignal);
+	
+	return 0;
 }
 

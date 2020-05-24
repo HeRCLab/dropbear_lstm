@@ -202,12 +202,9 @@ def main():
         axs[0].set_ylabel('Signal')
 
         y_data = y_predicted
-        axs[1].plot(x_data, y_data, '-')
+        axs[1].plot(x_data, y_data, 'r-')
+        axs[1].plot(x_data, x, 'b-')
         axs[1].set_ylabel('Predicted (w/real data)')
-
-        #y_data = y_autopredicted
-        #axs[2].plot(x_data, y_data, '-')
-        #axs[2].set_ylabel('Auto-predicted')
 
         # Put a title on the plot and the window, then render.
         fig.suptitle('(MLP) Original vs Predicted signals', fontsize=15)

@@ -12,6 +12,7 @@ import scipy.signal as signal
 import matplotlib.pyplot as plt
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, LSTM, Flatten, Input
+from tensorflow.keras.backend import clear_session
 import matplotlib.pyplot as plt
 import tensorflow as tf     # issue with importing tensorflow on
                             # tachyon due to its lack of AVX instructions
@@ -147,6 +148,9 @@ def main():
         y_pred = model.predict(x_train)
 
         prev_model = model # Swap in the last window's model.
+
+        # Clean up all excess state Keras is keeping around.
+        clear_session()
         
         # the following line causes a runtime memory error, so I needed to expand the statement into a loop
         #rmse = math.sqrt(np.mean(np.square(y_train_pred - y_train)))
@@ -196,7 +200,7 @@ def main():
         "epochs": epochs,
         "layers": "-".join([str(x) for x in units]),
         "rmse_global": rmse,
-        "metadata": {},
+        "metadata": json.dumps({}),
     }
     print(json.dumps(out))
 

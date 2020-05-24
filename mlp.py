@@ -77,9 +77,6 @@ def main():
     args = parse_args()
     #downsample_levels, history_lengths, time_shift, training_portion = load_config (args.config)
 
-    # TODO: Create MLP model with Keras layers. Train on a window of samples, up to some max window size.
-    # TODO: Want to predict next sample, and continue to do so until next window ready. (Extreme case is window_size=1, which would be a retrain on each new sample ingested.)
-    
     # Read contents of file (if provided), else read from stdin.
     #print ( "loading data... ")
     data = None
@@ -93,10 +90,6 @@ def main():
     x = np.array(data["acceleration_data"])
     input_sample_rate = np.float(data["accelerometer_sample_rate"])
 
-
-    # make sure to reset x and y since we modify them for resampling
-    x = np.array(data["acceleration_data"])
-
     epochs = args.epochs
     if len(args.units) > 0:
         units = [int(x) for x in args.units]
@@ -108,8 +101,9 @@ def main():
     prev_model = None
     use_gpu = args.use_gpu
 
-    y_predicted = [0 for x in range(0, training_window)] # Pack with zeros for first training window.
-    y_autopredicted = [0 for x in range(0, training_window)] # Pack with zeros for first training window.
+    #y_predicted = [0 for x in range(0, training_window)] # Pack with zeros for first training window.
+    y_predicted = np.zeros((len(x),))
+    results_idx = training_window
 
     # Online training fun
     #print("Number of windows: {}".format(len(range(0, len(x)-prediction_time-training_window, training_window))))
@@ -137,7 +131,9 @@ def main():
                 future_x = np.array([x_train[i]])
                 y_pred = prev_model.predict([future_x])
                 #print("Prediction: {}".format(y_pred))
-                y_predicted += y_pred.flatten().tolist()
+                y_pred = y_pred.flatten()
+                y_predicted[results_idx:results_idx+len(y_pred)] = y_pred
+                results_idx += len(y_pred)
 
         # Normalize the training data.
         # TODO
@@ -155,28 +151,15 @@ def main():
         # the following line causes a runtime memory error, so I needed to expand the statement into a loop
         #rmse = math.sqrt(np.mean(np.square(y_train_pred - y_train)))
         # hacked version to avoid memory error:
-        size = y_pred.shape[0]
-        diffs = np.ndarray((size,), float)
-        for i in range(0, size):
-            diffs[i] = np.square(y_pred[i] - y_train[i])
-        rmse = math.sqrt(np.mean(diffs))
+        #size = y_pred.shape[0]
+        #diffs = np.ndarray((size,), float)
+        #for i in range(0, size):
+        #    diffs[i] = np.square(y_pred[i] - y_train[i])
+        #rmse = math.sqrt(np.mean(diffs))
         #print("RMSE {}".format(rmse))
 
-        # AUTO-PREDICTION
-        # Attempt to predict the entire next window by iteratively predicting forward in time.
-        future_x = np.array([x_train[-1]])
-        j = 0
-        for i in range(0, training_window):
-            y_pred = model.predict([future_x])
-            #print("Prediction: {}".format(y_pred))
-            future_x = np.hstack((future_x[:,1:], y_pred)) # Move the window up 1 sample.
-            j += 1
-            # Append predicted samples to history list.
-            if j == history_length:
-                y_autopredicted += future_x.flatten().tolist()
-                j = 0
 
-    y_predicted += [0 for x in range(0, training_window)]
+    #y_predicted += [0 for x in range(0, training_window)] # Already covered by earlier array creation.
 
     # Computed global RMS.
     size = len(y_predicted)-(training_window*2)

@@ -79,12 +79,14 @@ def gen_plots(d):
     axs.set_xlabel('Training Window length')
     axs.set_ylabel('Epochs')
     axs.set_zlabel('RMSE')
+    axs.view_init(15, 74)
 
     axs = fig.add_subplot(3, 3, 3, projection='3d')
     axs.scatter(d['sample_window_length'], d['epochs'], d['rmse_global'])
     axs.set_xlabel('Sample Window length')
     axs.set_ylabel('Epochs')
     axs.set_zlabel('RMSE')
+    axs.view_init(15, 74)
 
     # --------------------------------------------------------------
     # Second row
@@ -93,12 +95,14 @@ def gen_plots(d):
     axs.set_xlabel('Epochs')
     axs.set_ylabel('Training Window length')
     axs.set_zlabel('RMSE')
+    axs.view_init(32, 26)
 
     axs = fig.add_subplot(3, 3, 6, projection='3d')
     axs.scatter(d['sample_window_length'], d['training_window_length'], d['rmse_global'])
     axs.set_xlabel('Sample Window length')
     axs.set_ylabel('Training Window length')
     axs.set_zlabel('RMSE')
+    axs.view_init(50, 37)
 
     # --------------------------------------------------------------
     # Third row
@@ -107,12 +111,14 @@ def gen_plots(d):
     axs.set_xlabel('Epochs')
     axs.set_ylabel('Sample Window length')
     axs.set_zlabel('RMSE')
+    axs.view_init(27, 26)
 
     axs = fig.add_subplot(3, 3, 8, projection='3d')
     axs.scatter(d['training_window_length'], d['sample_window_length'], d['rmse_global'])
     axs.set_xlabel('Training Window length')
     axs.set_ylabel('Sample Window length')
     axs.set_zlabel('RMSE')
+    axs.view_init(31, -51)
 
     # Put a title on the plot and the window, then render.
     fig.suptitle('MLP/ANN Batch Run Results ({} records)'.format(d['num_records']), fontsize=15)
@@ -121,7 +127,8 @@ def gen_plots(d):
 
 
 if __name__ == "__main__":
-    sql = "SELECT * FROM AlgorithmResult"
+    # Note: We pair this "SELECT" query with a "GROUP BY" later to allow averaging RMSEs.
+    sql = "SELECT id,author,algorithm,activation,dataset,creation_ts,forecast_length,prediction_gap,training_window_length,sample_window_length,epochs,layers,AVG(rmse_global),metadata FROM AlgorithmResult"
     args = parse_args()
 
     # User can inject arbitrary SQL here, but we never commit the results, so
@@ -129,6 +136,8 @@ if __name__ == "__main__":
     if len(args.where) > 0:
         sql += " WHERE "
         sql += " AND ".join(args.where)
+        # The "GROUP BY" clause ensures we average together identical configurations.
+        sql += " GROUP BY author,algorithm,activation,dataset,forecast_length,prediction_gap,training_window_length,sample_window_length,epochs,layers"
 
     data_dict = get_data_sqlite(args.database, sql)
     gen_plots(data_dict)

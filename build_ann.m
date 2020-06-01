@@ -7,12 +7,13 @@ if nargin==5
     bias_output = varargin{1}.bias_output;
 else
     % randomly initilize weights
+    % update: setting to 0 for now
     weights_hidden = cell(1,size(neurons,2));
-    weights_hidden{1,1} = .1 * randn(neurons(1),size(x_train,2));
+    weights_hidden{1,1} = 0 * randn(neurons(1),size(x_train,2)); % coeff was .1
     for i=2:size(neurons,2)
-        weights_hidden{1,i} = .1 * randn(neurons(i),neurons(i-1));
+        weights_hidden{1,i} = 0 * randn(neurons(i),neurons(i-1)); % coeff was .1
     end
-    weights_output = .1 * randn(size(y_train,2),neurons(size(neurons,2)));
+    weights_output = 0 * randn(size(y_train,2),neurons(size(neurons,2))); % coeff was .1
         
     % allocate and initilize biases to 0
     bias_hidden = cell(1,size(neurons,2));
@@ -30,7 +31,7 @@ end
 delta_output = zeros(1,size(weights_output,1));
 
 % setup
-alpha = 0.01;
+alpha = 1;
 
 error_progression=zeros(1,epochs);
 

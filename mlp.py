@@ -12,6 +12,7 @@ import scipy.signal as signal
 import matplotlib.pyplot as plt
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, LSTM, Flatten, Input
+from tensorflow.keras.backend import clear_session
 import matplotlib.pyplot as plt
 import tensorflow as tf     # issue with importing tensorflow on
                             # tachyon due to its lack of AVX instructions
@@ -20,20 +21,21 @@ import tensorflow as tf     # issue with importing tensorflow on
 
 def parse_args():
     parser = argparse.ArgumentParser(description='ANN/MLP Model')
+    parser.add_argument('--online', action="store_true", help="Do online training using a single model. (default: False)")
     parser.add_argument('-e', '--epochs', type=int, default=10, help="Number of epochs to spend training the network. (default: 10)")
     parser.add_argument('-u', '--units', action="append", default=[], help="Number of units in hidden layer. Providing this argument more than once will add additional hidden layers. (default: 1)")
-    parser.add_argument('--history', '--history-length', type=int, default=10, help="Number of samples in the history buffer. (default: 10)")
-    parser.add_argument('-w', '--training-window', type=int, default=40, help="Number of samples in each training window. (default: 40)")
+    parser.add_argument('-s', '--sampling-window', type=int, default=10, help="Number of samples to slice from the window for each training example. (default: 10)")
+    parser.add_argument('-t', '--training-window', type=int, default=40, help="Number of samples in each training window. (default: 40)")
     parser.add_argument('-f', '--filename', type=str, help="Filename of JSON waveform data to read in.")
-    parser.add_argument('-t', '--training-ratio', type=float, help="Ratio of incoming data to use for training, on a scale of 0.0-1.0 (default: 0.1)")
     parser.add_argument('-p', '--plot', action="store_true", help="Plot using matplotlib. (default: False)")
+    parser.add_argument('-v', '--verbose', action="store_true", help="Show more debugging information. (default: False)")
     parser.add_argument('--show-rmse-per-window', action="store_true", help="Display RMSE values for each training window. (default: False)")
     parser.add_argument('--use-gpu', action="store_true", help="Use GPU for accelerating model training. (default: False)")
 
     return parser.parse_args()
 
 
-def create_model(units, history_length):
+def create_model(units, history_length, want_verbose=0):
     model = Sequential()
     top_layer = True
     # If provided a list, it will create 1 layer per integer list item.
@@ -48,26 +50,27 @@ def create_model(units, history_length):
     else:
         model.add(Dense(units, input_shape=(history_length,)))
     model.add(Dense(1))
-    model.compile(loss='mean_squared_error', optimizer='adam')
+    model.compile(loss='mean_squared_error', optimizer='adam', verbose=want_verbose)
     return model
 
 
-def train_model(units, x_train, y_train, history_length, epochs=10, want_gpu=False):
+def train_model(units, x_train, y_train, history_length, model=None, epochs=10, want_gpu=False, want_verbose=0):
     # the following line verifies that Tensorflow has detected a target GPU
     # sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
 
-    #batchsize = x_train.shape[0]
-    #print("BATCH SIZE: {}".format(batchsize))
-    #batchsize = 1
-
-    if want_gpu:
-        with tf.device('/gpu:0'): 
+    # Windowed-style
+    if model is None:
+        if want_gpu:
+            with tf.device('/gpu:0'):
+                model = create_model(units, history_length)
+                model.fit(x_train, y_train, epochs=epochs, verbose=want_verbose)
+                #model.reset_states() # Only needed for stateful LSTM.
+        else:
             model = create_model(units, history_length)
-            model.fit(x_train, y_train, epochs=epochs, verbose=0)
-            #model.reset_states() # Only needed for stateful LSTM.
+            model.fit(x_train, y_train, epochs=epochs, verbose=want_verbose)
+    # Online-style
     else:
-        model = create_model(units, history_length)
-        model.fit(x_train, y_train, epochs=epochs, verbose=0)
+        model.fit(x_train, y_train, epochs=epochs, verbose=want_verbose)
 
     return model
 
@@ -76,11 +79,7 @@ def main():
     args = parse_args()
     #downsample_levels, history_lengths, time_shift, training_portion = load_config (args.config)
 
-    # TODO: Create MLP model with Keras layers. Train on a window of samples, up to some max window size.
-    # TODO: Want to predict next sample, and continue to do so until next window ready. (Extreme case is window_size=1, which would be a retrain on each new sample ingested.)
-    
     # Read contents of file (if provided), else read from stdin.
-    #print ( "loading data... ")
     data = None
     if args.filename is not None:
         with open(args.filename, "r") as f:
@@ -92,10 +91,6 @@ def main():
     x = np.array(data["acceleration_data"])
     input_sample_rate = np.float(data["accelerometer_sample_rate"])
 
-
-    # make sure to reset x and y since we modify them for resampling
-    x = np.array(data["acceleration_data"])
-
     epochs = args.epochs
     if len(args.units) > 0:
         units = [int(x) for x in args.units]
@@ -103,15 +98,16 @@ def main():
         units = [1]
     prediction_time = 1
     training_window = args.training_window
-    history_length = args.history
+    history_length = args.sampling_window
+    model = None
     prev_model = None
     use_gpu = args.use_gpu
+    want_verbose = args.verbose
 
-    y_predicted = [0 for x in range(0, training_window)] # Pack with zeros for first training window.
-    y_autopredicted = [0 for x in range(0, training_window)] # Pack with zeros for first training window.
+    y_predicted = np.zeros((len(x),))
+    results_idx = training_window
 
     # Online training fun
-    #print("Number of windows: {}".format(len(range(0, len(x)-prediction_time-training_window, training_window))))
     for i in range(0, len(x)-prediction_time-training_window, training_window):
         start_train = i
         end_train = i + training_window
@@ -136,45 +132,26 @@ def main():
                 future_x = np.array([x_train[i]])
                 y_pred = prev_model.predict([future_x])
                 #print("Prediction: {}".format(y_pred))
-                y_predicted += y_pred.flatten().tolist()
+                y_pred = y_pred.flatten()
+                y_predicted[results_idx:results_idx+len(y_pred)] = y_pred
+                results_idx += len(y_pred)
 
         # Normalize the training data.
         # TODO
 
         # Train the model + get predictions.
-        model = train_model(units, x_train, y_train, history_length, epochs=epochs, want_gpu=use_gpu)
-        #print("x_train shape: {}".format(x_train.shape))
+        if args.online and model is not None:
+            model = train_model(units, x_train, y_train, history_length, epochs=epochs, want_gpu=use_gpu, model=model)
+        else:
+            model = train_model(units, x_train, y_train, history_length, epochs=epochs, want_gpu=use_gpu)
         y_pred = model.predict(x_train)
 
         prev_model = model # Swap in the last window's model.
-        
-        # the following line causes a runtime memory error, so I needed to expand the statement into a loop
-        #rmse = math.sqrt(np.mean(np.square(y_train_pred - y_train)))
-        # hacked version to avoid memory error:
-        size = y_pred.shape[0]
-        diffs = np.ndarray((size,), float)
-        for i in range(0, size):
-            diffs[i] = np.square(y_pred[i] - y_train[i])
-        rmse = math.sqrt(np.mean(diffs))
-        #print("RMSE {}".format(rmse))
 
-        # AUTO-PREDICTION
-        # Attempt to predict the entire next window by iteratively predicting forward in time.
-        future_x = np.array([x_train[-1]])
-        j = 0
-        for i in range(0, training_window):
-            y_pred = model.predict([future_x])
-            #print("Prediction: {}".format(y_pred))
-            future_x = np.hstack((future_x[:,1:], y_pred)) # Move the window up 1 sample.
-            j += 1
-            # Append predicted samples to history list.
-            if j == history_length:
-                y_autopredicted += future_x.flatten().tolist()
-                j = 0
+        # Clean up all excess state Keras is keeping around.
+        clear_session()
 
-    y_predicted += [0 for x in range(0, training_window)]
-
-    # Computed global RMS.
+    # Computed global RMSE.
     size = len(y_predicted)-(training_window*2)
     diffs = np.ndarray((size,), float)
     for i in range(0, size):
@@ -185,7 +162,7 @@ def main():
     # Print JSON blob for other tools to consume.
     out = {
         "author": "Philip Conrad",
-        "algorithm": "window-mlp",
+        "algorithm": ["window-mlp", "window-mlp-online"][args.online],
         "activation": "linear",
         "dataset": ["unknown", args.filename][args.filename is not None],
         "creation_ts": datetime.utcnow().isoformat(),
@@ -196,7 +173,7 @@ def main():
         "epochs": epochs,
         "layers": "-".join([str(x) for x in units]),
         "rmse_global": rmse,
-        "metadata": {},
+        "metadata": json.dumps({}),
     }
     print(json.dumps(out))
 
@@ -215,12 +192,9 @@ def main():
         axs[0].set_ylabel('Signal')
 
         y_data = y_predicted
-        axs[1].plot(x_data, y_data, '-')
+        axs[1].plot(x_data, y_data, 'r-')
+        axs[1].plot(x_data, x, 'b-')
         axs[1].set_ylabel('Predicted (w/real data)')
-
-        #y_data = y_autopredicted
-        #axs[2].plot(x_data, y_data, '-')
-        #axs[2].set_ylabel('Auto-predicted')
 
         # Put a title on the plot and the window, then render.
         fig.suptitle('(MLP) Original vs Predicted signals', fontsize=15)

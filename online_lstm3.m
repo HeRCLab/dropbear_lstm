@@ -7,6 +7,9 @@ clear all;
 % clear errors
 errors=[];
 
+% initialize empty frames
+frames=[];
+
 % initialize network for low-level trainer
 first_training=1;
 
@@ -34,10 +37,16 @@ phases=[0,0,0,0,0,0];
 % synthesize signal
 [x,signal] = make_signal(sample_rate,time,amps,freqs,phases);
 
+% read Puga's signal
+data=lvm_import('Ivol_Acc_Load_1S_1STD.lvm');
+x = data.Segment1.data(:,1);
+signal = data.Segment1.data(:,4)';
+sample_rate = numel(data.Segment1.data(:,1))/data.Segment1.data(end,1);
+
 % training parameters
 model_sample_rate = 200;
 prediction_time = 10;
-subsample = sample_rate / model_sample_rate;
+subsample = floor(sample_rate / model_sample_rate);
 
 % select network type
 network_type = 'mlp';
@@ -53,9 +62,12 @@ x_sub = x(1:subsample:end);
 signal_sub = signal(1:subsample:end);
 
 % plot subsampled signal
-myfig2 = subplot(3,1,1);
+myfig2 = figure('Position', [20 50 1650 800]);
+hold on;
+subplot(3,1,1);
 plot(x_sub,signal_sub);
 title('subsampled signal');
+xlabel('time (s)');
 
 % % plot the training windows
 % min_val = min(signal_sub);
@@ -239,20 +251,36 @@ for i = 1:1:numel(signal_sub)-prediction_time-1-1
     fprintf('rms of segment training window %d = %0.4e\n',floor((i-1)/1)+1,rmse);
     errors=[errors,rmse];
     subplot(3,1,2);
-    plot(errors,'r');
+    plot((1:size(errors,2))./model_sample_rate,errors,'r');
     title('RMS error');
-    xlabel('sample number');
+    xlabel('time (s)');
     ylabel('rmse');
-    pause(1e-6);
+    
+    % plot predicted signal
+    subplot(3,1,3);
+    plot(x_sub,signal_pred);
+    xlabel('time (s)');
+    
+    %pause(1e-6);
+    drawnow;
+    frames=[frames;getframe(gcf)];
     
     %figure;
     %plot(x_sub,signal_pred);
     
 end
 
-% plot predicted signal
-subplot(3,1,3);
-plot(x_sub,signal_pred);
+writerObj = VideoWriter('myVideo.mp4','MPEG-4');%VideoCompressionMethod,'H.264');
+writerObj.Quality=100;
+writerObj.FrameRate = 10;
+%writerObj.VideoBitsPerPixel=24;
+open(writerObj);
+for i=1:length(frames)
+    % convert the image to a frame
+    frame = frames(i) ;    
+    writeVideo(writerObj, frame);
+end
+close(writerObj);
 
 % draw zigzgags on non-predicted area
 % offset=0;

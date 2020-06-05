@@ -271,7 +271,6 @@ int main () {
 	free(myparams->freqs);
 	free(myparams->phases);
 	free(myparams);
-	free(mysignal);
 	
 	return 0;
 }

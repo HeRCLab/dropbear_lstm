@@ -66,7 +66,7 @@ void generate_synthetic_data (PARAMS myparams,SIGNAL mysignal) {
 void forward_pass (struct layer *mlp) {
 	// start with second layer, since the first layer is the input layer and there's
 	// nothing to do there
-	struct layer *current_layer=mlp;
+	struct layer *current_layer=mlp->next;
 
 	while (current_layer=current_layer->next) {
 		// matrix-vector multiply

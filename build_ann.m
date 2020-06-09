@@ -1,4 +1,6 @@
-function build_ann = build_ann (x_train,y_train,neurons,epochs,varargin)
+function [build_ann,pred] = build_ann (x_train,y_train,neurons,epochs,varargin)
+
+global output_biases;
 
 if nargin==5
     weights_hidden = varargin{1}.weights_hidden;
@@ -9,11 +11,27 @@ else
     % randomly initilize weights
     % update: setting to 0 for now
     weights_hidden = cell(1,size(neurons,2));
-    weights_hidden{1,1} = 0 * randn(neurons(1),size(x_train,2)); % coeff was .1
+    
+    % option 1:  random initial weights
+    weights_hidden{1,1} = .1 * randn(neurons(1),size(x_train,2));
     for i=2:size(neurons,2)
-        weights_hidden{1,i} = 0 * randn(neurons(i),neurons(i-1)); % coeff was .1
+        weights_hidden{1,i} = .1 * randn(neurons(i),neurons(i-1));
     end
-    weights_output = 0 * randn(size(y_train,2),neurons(size(neurons,2))); % coeff was .1
+    weights_output = .1 * randn(size(y_train,2),neurons(size(neurons,2)));
+    
+    % option 2:  0 weights
+    %weights_hidden{1,1} = zeros(neurons(1),size(x_train,2));
+    %for i=2:size(neurons,2)
+    %    weights_hidden{1,i} = zeros(neurons(i),neurons(i-1));
+    %end
+    %weights_output = zeros(size(y_train,2),neurons(size(neurons,2)));
+    
+%     % option 3:  weights = .1
+%     weights_hidden{1,1} = .1 * ones(neurons(1),size(x_train,2));
+%     for i=2:size(neurons,2)
+%         weights_hidden{1,i} = .1 * ones(neurons(i),neurons(i-1));%0 * randn(neurons(i),neurons(i-1));
+%     end
+%     weights_output = .1 * ones(size(y_train,2),neurons(size(neurons,2)));
         
     % allocate and initilize biases to 0
     bias_hidden = cell(1,size(neurons,2));
@@ -31,7 +49,7 @@ end
 delta_output = zeros(1,size(weights_output,1));
 
 % setup
-alpha = 1;
+alpha = 1e-2;
 
 error_progression=zeros(1,epochs);
 
@@ -107,7 +125,8 @@ for i=1:epochs
     end
     
   end
-    
+  
+  output_biases = [output_biases,bias_output];
   error_progression(1,i)=evaluate_net(weights_hidden,bias_hidden,weights_output,bias_output,x_train,y_train);
   
 end
@@ -126,4 +145,4 @@ build_ann.bias_hidden = bias_hidden;
 build_ann.weights_output = weights_output;
 build_ann.bias_output = bias_output;
 
-  
+pred = out_output;

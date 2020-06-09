@@ -4,6 +4,10 @@
 close all;
 clear all;
 
+% debug
+global output_biases;
+output_biases=[];
+
 % clear errors
 errors=[];
 
@@ -38,10 +42,10 @@ phases=[0,0,0,0,0,0];
 [x,signal] = make_signal(sample_rate,time,amps,freqs,phases);
 
 % read Puga's signal
-data=lvm_import('Ivol_Acc_Load_1S_1STD.lvm');
-x = data.Segment1.data(:,1);
-signal = data.Segment1.data(:,4)';
-sample_rate = numel(data.Segment1.data(:,1))/data.Segment1.data(end,1);
+%data=lvm_import('Ivol_Acc_Load_1S_1STD.lvm');
+%x = data.Segment1.data(:,1);
+%signal = data.Segment1.data(:,4)';
+%sample_rate = numel(data.Segment1.data(:,1))/data.Segment1.data(end,1);
 
 % training parameters
 model_sample_rate = 200;
@@ -58,13 +62,14 @@ else
 end
 
 % synthesize subsampled signal
+% NOTE: this uses striding, not interpolation as in the C-based model!
 x_sub = x(1:subsample:end);
 signal_sub = signal(1:subsample:end);
 
 % plot subsampled signal
 myfig2 = figure('Position', [20 50 1650 800]);
 hold on;
-subplot(3,1,1);
+subplot(4,1,1);
 plot(x_sub,signal_sub);
 title('subsampled signal');
 xlabel('time (s)');
@@ -120,7 +125,7 @@ options = trainingOptions('adam', ...
     'LearnRateDropFactor',0.2, ...
     'Verbose',0);
 
-subplot(3,1,2);
+subplot(4,1,2);
 
 % iterate through each training window
 for i = 1:1:numel(signal_sub)-prediction_time-1-1
@@ -164,10 +169,10 @@ for i = 1:1:numel(signal_sub)-prediction_time-1-1
         % check if we want to use our home-made trainer
         if use_homemade
            if first_training
-               mynet = build_ann(x_train,y_train,[10],epochs);
+               [mynet,output_from_mlp] = build_ann(x_train,y_train,[10],epochs);
                first_training=0;
            else
-               mynet = build_ann(x_train,y_train,[10],epochs,mynet);
+               [mynet,output_from_mlp] = build_ann(x_train,y_train,[10],epochs,mynet);
            end
         else
             % convert the training data into the necessary format for
@@ -230,7 +235,8 @@ for i = 1:1:numel(signal_sub)-prediction_time-1-1
             temp=predict(net,x_input2)';
         else
             % homemade version of the mlp
-            temp=mypredict(mynet,x_input)';
+            %temp=mypredict(mynet,x_input)';
+            temp = output_from_mlp;
         end
 
         % in case the predicted window is longer than the remaining
@@ -247,19 +253,27 @@ for i = 1:1:numel(signal_sub)-prediction_time-1-1
                 signal_sub(start_pred_signal:end_pred_signal);
 
     rmse = mean(error.^2)^.5;
-
+    rmse = error;
+    
     fprintf('rms of segment training window %d = %0.4e\n',floor((i-1)/1)+1,rmse);
     errors=[errors,rmse];
-    subplot(3,1,2);
+    subplot(4,1,2);
     plot((1:size(errors,2))./model_sample_rate,errors,'r');
     title('RMS error');
     xlabel('time (s)');
     ylabel('rmse');
     
     % plot predicted signal
-    subplot(3,1,3);
+    subplot(4,1,3);
     plot(x_sub,signal_pred);
     xlabel('time (s)');
+    title('predicted signal');
+    
+    % plot output bias
+    subplot(4,1,4);
+    plot(output_biases);
+    xlabel('sample');
+    title('output bias');
     
     %pause(1e-6);
     drawnow;
@@ -296,6 +310,7 @@ close(writerObj);
 errors = signal_sub(1+prediction_time:end)-...
          signal_pred(1+prediction_time:end);
 
+subplot(4,1,4);
 rmse = mean(errors.^2)^.5;
 str = sprintf('predicted signal, rms = %0.4e',rmse);
 title(str);

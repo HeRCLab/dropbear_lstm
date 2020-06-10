@@ -217,7 +217,8 @@ flushedpred:
 				}
 
 				if (imgui.BeginPlot("Predicted Signal", "t", "s", imgui.Vec2{-1, -1}, int(imgui.ImPlotFlags_Default), int(imgui.ImPlotAxisFlags_Default), int(imgui.ImPlotAxisFlags_Default), int(imgui.ImPlotAxisFlags_Auxiliary), int(imgui.ImPlotAxisFlags_Auxiliary))) {
-					imgui.PlotLinePoints("s", predX, predY, 0)
+					imgui.PlotLinePoints("predicted", predX, predY, 0)
+					imgui.PlotLinePoints("subsampled", subX, subY, 0)
 					imgui.EndPlot()
 				}
 

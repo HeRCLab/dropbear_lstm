@@ -1,5 +1,5 @@
 CC = gcc
-C_OPTS =
+C_OPTS = -Wall -Wextra
 LINK_OPTS = -lm
 sources = $(wildcard *.c)
 objects = $(patsubst %.c,%.o,$(sources))

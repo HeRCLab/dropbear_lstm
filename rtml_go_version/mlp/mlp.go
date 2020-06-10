@@ -68,16 +68,15 @@ func NewLayer(size int, prev, next *Layer) *Layer {
 	if prev != nil {
 		l.Weight = make([]float64, size*(prev.TotalNeurons()))
 		for i, _ := range l.Weight {
-			l.Weight[i] = rand.Float64()
+			l.Weight[i] = rand.Float64() * 0.01
 		}
 	} else {
-		// This is the inputlayer, so there are no weights
+		// This is the input layer, so there are no weights
 		l.Weight = nil
 	}
 
 	for i, _ := range l.Bias {
-		// l.Bias[i] = rand.Float64()
-		l.Bias[i] = 0
+		l.Bias[i] = rand.Float64() * 0.01
 	}
 
 	return l
@@ -118,10 +117,6 @@ func NewMLP(alpha float64, g, gprime func(float64) float64, layerSizes ...int) *
 			nn.Layer[i] = NewLayer(v, nn.Layer[i-1], nil)
 		}
 
-	}
-
-	for i, _ := range nn.OutputLayer().Weight {
-		nn.OutputLayer().Weight[i] = 0
 	}
 
 	// generate links to next layers

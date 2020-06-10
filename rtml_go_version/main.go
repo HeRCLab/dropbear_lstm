@@ -16,7 +16,7 @@ const (
 	HIDDEN_SIZE     int     = 10
 	TRAINING_WINDOW int     = 40
 	SAMPLE_RATE     float64 = 5000
-	SUBSAMPLE       float64 = 0.1
+	SUBSAMPLE       float64 = 0.25
 	PREDICTION_TIME int     = 10
 	CHANSIZE        int     = 256
 	ALPHA           float64 = 0.1

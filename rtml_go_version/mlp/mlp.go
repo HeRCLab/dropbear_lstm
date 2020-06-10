@@ -76,7 +76,8 @@ func NewLayer(size int, prev, next *Layer) *Layer {
 	}
 
 	for i, _ := range l.Bias {
-		l.Bias[i] = rand.Float64()
+		// l.Bias[i] = rand.Float64()
+		l.Bias[i] = 0
 	}
 
 	return l
@@ -119,6 +120,10 @@ func NewMLP(alpha float64, g, gprime func(float64) float64, layerSizes ...int) *
 
 	}
 
+	for i, _ := range nn.OutputLayer().Weight {
+		nn.OutputLayer().Weight[i] = 0
+	}
+
 	// generate links to next layers
 	for i, _ := range layerSizes {
 		if i < len(layerSizes)-1 {
@@ -147,7 +152,7 @@ func Identity(x float64) float64 {
 }
 
 func Unit(x float64) float64 {
-	return 1
+	return 1.0
 }
 
 func (nn *MLP) ForwardPass(input []float64) error {
@@ -207,7 +212,7 @@ func (nn *MLP) BackwardPass(output []float64) error {
 		//
 		// nn.OutputLayer().Delta[j] is Δ[j]
 		//
-		// g' is ActivationDeriv()
+		// g' is nn.DerivActivationFunction()
 		//
 		// in_j is layer.Output[j]
 		//

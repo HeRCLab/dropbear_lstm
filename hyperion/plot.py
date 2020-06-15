@@ -14,6 +14,7 @@ def parse_args():
 
     parser.add_argument("database", default="", help="Database file to query from.")
     parser.add_argument("--where", action="append", default=[], help="WHERE constraints to add to the SQL query. Can be used multiple times to add more constraints. (Ex: '--where \"epochs >= 50\" ')")
+    parser.add_argument("--max-rmse", type=float, help="Max RMSE value to scale the plots' Z-axes to.")
 
     return parser.parse_args()
 
@@ -58,7 +59,7 @@ def get_data_csv(filename):
     return dict(out)
 
 
-def gen_plots(d):
+def gen_plots(d, max_rmse=None):
     #num_plots = 3
     num_plots = 3
     #x_data = np.arange(len(x))
@@ -75,14 +76,14 @@ def gen_plots(d):
     # --------------------------------------------------------------
     # First row
     axs = fig.add_subplot(3, 3, 2, projection='3d')
-    axs.scatter(d['training_window_length'], d['epochs'], d['rmse_global'])
+    axs.scatter(d['training_window_length'], d['epochs'], d['rmse_global'], c=d['rmse_global'], s=5)
     axs.set_xlabel('Training Window length')
     axs.set_ylabel('Epochs')
     axs.set_zlabel('RMSE')
     axs.view_init(15, 74)
 
     axs = fig.add_subplot(3, 3, 3, projection='3d')
-    axs.scatter(d['sample_window_length'], d['epochs'], d['rmse_global'])
+    axs.scatter(d['sample_window_length'], d['epochs'], d['rmse_global'], c=d['rmse_global'], s=5)
     axs.set_xlabel('Sample Window length')
     axs.set_ylabel('Epochs')
     axs.set_zlabel('RMSE')
@@ -91,14 +92,14 @@ def gen_plots(d):
     # --------------------------------------------------------------
     # Second row
     axs = fig.add_subplot(3, 3, 4, projection='3d')
-    axs.scatter(d['epochs'], d['training_window_length'], d['rmse_global'])
+    axs.scatter(d['epochs'], d['training_window_length'], d['rmse_global'], c=d['rmse_global'], s=5)
     axs.set_xlabel('Epochs')
     axs.set_ylabel('Training Window length')
     axs.set_zlabel('RMSE')
     axs.view_init(32, 26)
 
     axs = fig.add_subplot(3, 3, 6, projection='3d')
-    axs.scatter(d['sample_window_length'], d['training_window_length'], d['rmse_global'])
+    axs.scatter(d['sample_window_length'], d['training_window_length'], d['rmse_global'], c=d['rmse_global'], s=5)
     axs.set_xlabel('Sample Window length')
     axs.set_ylabel('Training Window length')
     axs.set_zlabel('RMSE')
@@ -107,14 +108,14 @@ def gen_plots(d):
     # --------------------------------------------------------------
     # Third row
     axs = fig.add_subplot(3, 3, 7, projection='3d')
-    axs.scatter(d['epochs'], d['sample_window_length'], d['rmse_global'])
+    axs.scatter(d['epochs'], d['sample_window_length'], d['rmse_global'], c=d['rmse_global'], s=5)
     axs.set_xlabel('Epochs')
     axs.set_ylabel('Sample Window length')
     axs.set_zlabel('RMSE')
     axs.view_init(27, 26)
 
     axs = fig.add_subplot(3, 3, 8, projection='3d')
-    axs.scatter(d['training_window_length'], d['sample_window_length'], d['rmse_global'])
+    axs.scatter(d['training_window_length'], d['sample_window_length'], d['rmse_global'], c=d['rmse_global'], s=5)
     axs.set_xlabel('Training Window length')
     axs.set_ylabel('Sample Window length')
     axs.set_zlabel('RMSE')

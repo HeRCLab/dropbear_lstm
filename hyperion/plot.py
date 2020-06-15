@@ -15,6 +15,9 @@ def parse_args():
     parser.add_argument("database", default="", help="Database file to query from.")
     parser.add_argument("--where", action="append", default=[], help="WHERE constraints to add to the SQL query. Can be used multiple times to add more constraints. (Ex: '--where \"epochs >= 50\" ')")
     parser.add_argument("--max-rmse", type=float, help="Max RMSE value to scale the plots' Z-axes to.")
+    parser.add_argument("-o", "--output", help="(Optional) Output file for the plot.")
+    parser.add_argument("-sx", "--scale-x", type=float, help="(Optional) Size of the plot on the X axis.")
+    parser.add_argument("-sy", "--scale-y", type=float, help="(Optional) Size of the plot on the Y axis.")
 
     return parser.parse_args()
 
@@ -59,13 +62,14 @@ def get_data_csv(filename):
     return dict(out)
 
 
-def gen_plots(d, max_rmse=None):
+def gen_plots(d, fig_size, outfile=None, max_rmse=None):
     #num_plots = 3
     num_plots = 3
     #x_data = np.arange(len(x))
 
     # Plot subplot for each signal.
     fig = plt.figure()
+    fig.set_size_inches(fig_size)
 
     # Set axis labels.
     for (y, text) in zip([0.75, 0.5, 0.25], ["Epochs", "Training Window\nlength", "Sample Window\nlength"]):
@@ -124,13 +128,19 @@ def gen_plots(d, max_rmse=None):
     # Put a title on the plot and the window, then render.
     fig.suptitle('MLP/ANN Batch Run Results ({} records)'.format(d['num_records']), fontsize=15)
     fig.canvas.set_window_title('MLP Batch Run Results ({} records)'.format(d['num_records']))
-    plt.show()
+
+    if outfile is not None:
+        print("Saving figure to file: {}".format(outfile))
+        fig.savefig(outfile, dpi=200)
+    else:
+        plt.show()
 
 
 if __name__ == "__main__":
     # Note: We pair this "SELECT" query with a "GROUP BY" later to allow averaging RMSEs.
     sql = "SELECT id,author,algorithm,activation,dataset,creation_ts,forecast_length,prediction_gap,training_window_length,sample_window_length,epochs,layers,AVG(rmse_global),metadata FROM AlgorithmResult"
     args = parse_args()
+    fig_size = ([5, args.scale_x][args.scale_x is not None], [5, args.scale_y][args.scale_y is not None])
 
     # User can inject arbitrary SQL here, but we never commit the results, so
     # it should be safe to allow here.
@@ -141,4 +151,4 @@ if __name__ == "__main__":
         sql += " GROUP BY author,algorithm,activation,dataset,forecast_length,prediction_gap,training_window_length,sample_window_length,epochs,layers"
 
     data_dict = get_data_sqlite(args.database, sql)
-    gen_plots(data_dict)
+    gen_plots(data_dict, fig_size, outfile=args.output)

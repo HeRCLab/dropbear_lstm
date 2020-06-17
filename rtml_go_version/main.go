@@ -12,15 +12,14 @@ import (
 )
 
 const (
-	HISTORY_LENGTH  int     = 500
+	HISTORY_LENGTH  int     = 5
 	HIDDEN_SIZE     int     = 10
-	TRAINING_WINDOW int     = 40
 	SAMPLE_RATE     float64 = 5000
 	SUBSAMPLE       float64 = 0.25
-	PREDICTION_TIME int     = 500
+	PREDICTION_TIME int     = 5
 	CHANSIZE        int     = 256
 	ALPHA           float64 = 0.1
-	DATASET_SIZE    float64 = 5
+	DATASET_SIZE    float64 = 5 // number of seconds to run the model for
 )
 
 type Signal struct {
@@ -81,11 +80,11 @@ func (sig *Signal) Subsample(rate float64) *Signal {
 
 func RunRTML(groundtruth, subchan, predchan chan Point) {
 	sig, err := GenerateSyntheticData(
-		SAMPLE_RATE,                   // sample_rate
-		DATASET_SIZE,                  // time
-		[]float64{20, 37, 78, 12, 54}, // freqs
-		[]float64{0, 1, 2, 3, 5},      // phases
-		[]float64{1, 2, 3, 0.7, 2.3},  // amplitudes
+		SAMPLE_RATE,  // sample_rate
+		DATASET_SIZE, // time
+		[]float64{2, 3.7, 0.780, 0.012, 0.0054, 0.00013}, // freqs
+		[]float64{0, 1, 2, 3, 5, 1},                      // phases
+		[]float64{1, 2, 3, 0.7, 2.3, 1},                  // amplitudes
 	)
 	// sig, err := GenerateSyntheticData(
 	//         SAMPLE_RATE,            // sample_rate

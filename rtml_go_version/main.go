@@ -12,12 +12,12 @@ import (
 )
 
 const (
-	HISTORY_LENGTH  int     = 50
+	HISTORY_LENGTH  int     = 500
 	HIDDEN_SIZE     int     = 10
 	TRAINING_WINDOW int     = 40
 	SAMPLE_RATE     float64 = 5000
 	SUBSAMPLE       float64 = 0.25
-	PREDICTION_TIME int     = 50
+	PREDICTION_TIME int     = 500
 	CHANSIZE        int     = 256
 	ALPHA           float64 = 0.1
 	DATASET_SIZE    float64 = 5
@@ -80,20 +80,20 @@ func (sig *Signal) Subsample(rate float64) *Signal {
 }
 
 func RunRTML(groundtruth, subchan, predchan chan Point) {
-	// sig, err := GenerateSyntheticData(
-	//         SAMPLE_RATE,                   // sample_rate
-	//         DATASET_SIZE,                  // time
-	//         []float64{20, 37, 78, 12, 54}, // freqs
-	//         []float64{0, 1, 2, 3, 5},      // phases
-	//         []float64{1, 2, 3, 0.7, 2.3},  // amplitudes
-	// )
 	sig, err := GenerateSyntheticData(
-		SAMPLE_RATE,            // sample_rate
-		DATASET_SIZE,           // time
-		[]float64{10, 20, 37},  // freqs
-		[]float64{0, 1, 3},     // phases
-		[]float64{1, 0.8, 1.2}, // amplitudes
+		SAMPLE_RATE,                   // sample_rate
+		DATASET_SIZE,                  // time
+		[]float64{20, 37, 78, 12, 54}, // freqs
+		[]float64{0, 1, 2, 3, 5},      // phases
+		[]float64{1, 2, 3, 0.7, 2.3},  // amplitudes
 	)
+	// sig, err := GenerateSyntheticData(
+	//         SAMPLE_RATE,            // sample_rate
+	//         DATASET_SIZE,           // time
+	//         []float64{10, 20, 37},  // freqs
+	//         []float64{0, 1, 3},     // phases
+	//         []float64{1, 0.8, 1.2}, // amplitudes
+	// )
 
 	count := 0 // used to know when we need to force a GUI update
 
@@ -123,10 +123,10 @@ func RunRTML(groundtruth, subchan, predchan chan Point) {
 
 	nn := mlp.NewMLP(ALPHA, mlp.ReLU, mlp.ReLUDeriv, HISTORY_LENGTH, HIDDEN_SIZE, PREDICTION_TIME)
 
-	for i := HISTORY_LENGTH + PREDICTION_TIME + 1; i < len(sub.T); i++ {
+	for i := HISTORY_LENGTH + 2*PREDICTION_TIME + 2; i < len(sub.T); i++ {
 
 		// first train with the available data...
-		err := nn.ForwardPass(sub.S[i-HISTORY_LENGTH-PREDICTION_TIME-1 : i-PREDICTION_TIME-1])
+		err := nn.ForwardPass(sub.S[i-HISTORY_LENGTH-2*PREDICTION_TIME-2 : i-HISTORY_LENGTH-PREDICTION_TIME-2])
 		if err != nil {
 			panic(err)
 		}
@@ -139,9 +139,9 @@ func RunRTML(groundtruth, subchan, predchan chan Point) {
 		nn.UpdateWeights()
 
 		// now make a prediction
-		nn.ForwardPass(sub.S[i-HISTORY_LENGTH : i])
+		nn.ForwardPass(sub.S[i-PREDICTION_TIME : i])
 
-		t := sub.T[i-HISTORY_LENGTH] // time of Activation[0]
+		t := sub.T[i-PREDICTION_TIME] // time of Activation[0]
 
 		// predchan <- Point{t + float64(HISTORY_LENGTH)/sub.SampleRate, nn.OutputLayer().Activation[0]}
 		// predchan <- Point{t, nn.OutputLayer().Activation[0]}

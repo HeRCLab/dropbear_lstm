@@ -123,7 +123,7 @@ func RunRTML(groundtruth, subchan, predchan chan Point) {
 			panic(err)
 		}
 
-		predchan <- Point{t - float64(HISTORY_LENGTH)/sub.SampleRate, nn.OutputLayer().Activation[0]}
+		predchan <- Point{t - float64(HISTORY_LENGTH+1)/sub.SampleRate, nn.OutputLayer().Activation[0]}
 		g.Update()
 		count++
 		if count >= CHANSIZE {

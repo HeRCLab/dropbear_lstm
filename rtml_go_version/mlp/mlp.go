@@ -30,6 +30,9 @@ type Layer struct {
 	Delta []float64
 
 	Bias []float64
+
+	ActivationFunction      func(float64) float64
+	DerivActivationFunction func(float64) float64
 }
 
 func (l *Layer) TotalNeurons() int {
@@ -55,20 +58,22 @@ func (l *Layer) SetWeight(thisNeuron, prevNeuron int, newWeight float64) {
 	l.Weight[thisNeuron*l.Prev.TotalNeurons()+prevNeuron] = newWeight
 }
 
-func NewLayer(size int, prev, next *Layer) *Layer {
+func NewLayer(size int, prev, next *Layer, g, gprime func(float64) float64) *Layer {
 	l := &Layer{
-		Prev:       prev,
-		Next:       next,
-		Delta:      make([]float64, size),
-		Output:     make([]float64, size),
-		Activation: make([]float64, size),
-		Bias:       make([]float64, size),
+		Prev:                    prev,
+		Next:                    next,
+		Delta:                   make([]float64, size),
+		Output:                  make([]float64, size),
+		Activation:              make([]float64, size),
+		Bias:                    make([]float64, size),
+		ActivationFunction:      g,
+		DerivActivationFunction: gprime,
 	}
 
 	if prev != nil {
 		l.Weight = make([]float64, size*(prev.TotalNeurons()))
 		for i, _ := range l.Weight {
-			l.Weight[i] = rand.Float64() * 0.01
+			l.Weight[i] = rand.Float64()
 		}
 	} else {
 		// This is the input layer, so there are no weights
@@ -76,7 +81,7 @@ func NewLayer(size int, prev, next *Layer) *Layer {
 	}
 
 	for i, _ := range l.Bias {
-		l.Bias[i] = rand.Float64() * 0.01
+		l.Bias[i] = rand.Float64()
 	}
 
 	return l
@@ -87,10 +92,6 @@ type MLP struct {
 
 	// Learning rate
 	Alpha float64
-
-	ActivationFunction func(float64) float64
-
-	DerivActivationFunction func(float64) float64
 }
 
 func (nn *MLP) InputLayer() *Layer {
@@ -103,18 +104,21 @@ func (nn *MLP) OutputLayer() *Layer {
 
 func NewMLP(alpha float64, g, gprime func(float64) float64, layerSizes ...int) *MLP {
 	nn := &MLP{
-		Layer:                   make([]*Layer, len(layerSizes)),
-		Alpha:                   alpha,
-		ActivationFunction:      g,
-		DerivActivationFunction: gprime,
+		Layer: make([]*Layer, len(layerSizes)),
+		Alpha: alpha,
 	}
 
 	// generate the layers and their links back to the previous layers
 	for i, v := range layerSizes {
 		if i == 0 {
-			nn.Layer[i] = NewLayer(v, nil, nil)
+			nn.Layer[i] = NewLayer(v, nil, nil, g, gprime)
+		} else if i == len(layerSizes)-1 {
+			// the output layer doesn't share our activation
+			// function, since we want it to have full freedom of
+			// range.
+			nn.Layer[i] = NewLayer(v, nn.Layer[i-1], nil, Identity, Unit)
 		} else {
-			nn.Layer[i] = NewLayer(v, nn.Layer[i-1], nil)
+			nn.Layer[i] = NewLayer(v, nn.Layer[i-1], nil, g, gprime)
 		}
 
 	}
@@ -150,6 +154,22 @@ func Unit(x float64) float64 {
 	return 1.0
 }
 
+func ReLU(x float64) float64 {
+	if x > 0 {
+		return x
+	} else {
+		return 0
+	}
+}
+
+func ReLUDeriv(x float64) float64 {
+	if x > 0 {
+		return 1
+	} else {
+		return 0
+	}
+}
+
 func (nn *MLP) ForwardPass(input []float64) error {
 	// The input must be the same size as the input layer, for obvious
 	// reasons.
@@ -183,7 +203,7 @@ func (nn *MLP) ForwardPass(input []float64) error {
 			sum += layer.Bias[j]
 
 			// a_j ← g(in_j)
-			layer.Activation[j] = nn.ActivationFunction(sum)
+			layer.Activation[j] = layer.ActivationFunction(sum)
 
 			// We also save in_j because we need it later for
 			// computing the Δ values
@@ -219,7 +239,7 @@ func (nn *MLP) BackwardPass(output []float64) error {
 		//    layer and the output vector are the same size, so it is
 		//    safe to assume we won't go out of bounds in output
 		nn.OutputLayer().Delta[j] =
-			nn.DerivActivationFunction(nn.OutputLayer().Output[j]) * (output[j] - nn.OutputLayer().Activation[j])
+			nn.OutputLayer().DerivActivationFunction(nn.OutputLayer().Output[j]) * (output[j] - nn.OutputLayer().Activation[j])
 	}
 
 	// and for remaining layers
@@ -244,7 +264,7 @@ func (nn *MLP) BackwardPass(output []float64) error {
 			for j := 0; j < layer.Next.TotalNeurons(); j++ {
 				layer.Delta[i] += layer.Next.GetWeight(j, i) * layer.Next.Delta[j]
 			}
-			layer.Delta[i] *= nn.DerivActivationFunction(layer.Output[i])
+			layer.Delta[i] *= layer.DerivActivationFunction(layer.Output[i])
 		}
 	}
 

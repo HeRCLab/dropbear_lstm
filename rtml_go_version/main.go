@@ -12,14 +12,15 @@ import (
 )
 
 const (
-	HISTORY_LENGTH  int     = 10
+	HISTORY_LENGTH  int     = 50
 	HIDDEN_SIZE     int     = 10
 	TRAINING_WINDOW int     = 40
 	SAMPLE_RATE     float64 = 5000
 	SUBSAMPLE       float64 = 0.25
-	PREDICTION_TIME int     = 10
+	PREDICTION_TIME int     = 50
 	CHANSIZE        int     = 256
 	ALPHA           float64 = 0.1
+	DATASET_SIZE    float64 = 5
 )
 
 type Signal struct {
@@ -80,11 +81,11 @@ func (sig *Signal) Subsample(rate float64) *Signal {
 
 func RunRTML(groundtruth, subchan, predchan chan Point) {
 	sig, err := GenerateSyntheticData(
-		SAMPLE_RATE,           // sample_rate
-		2.0,                   // time
-		[]float64{10, 37, 78}, // freqs
-		[]float64{0, 1, 2},    // phases
-		[]float64{1, 2, 3},    // amplitudes
+		SAMPLE_RATE,                   // sample_rate
+		DATASET_SIZE,                  // time
+		[]float64{20, 37, 78, 12, 54}, // freqs
+		[]float64{0, 1, 2, 3, 5},      // phases
+		[]float64{1, 2, 3, 0.7, 2.3},  // amplitudes
 	)
 
 	count := 0 // used to know when we need to force a GUI update
@@ -113,7 +114,7 @@ func RunRTML(groundtruth, subchan, predchan chan Point) {
 		}
 	}
 
-	nn := mlp.NewMLP(ALPHA, mlp.Identity, mlp.Unit, HISTORY_LENGTH, HIDDEN_SIZE, PREDICTION_TIME)
+	nn := mlp.NewMLP(ALPHA, mlp.ReLU, mlp.ReLUDeriv, HISTORY_LENGTH, HIDDEN_SIZE, PREDICTION_TIME)
 
 	for i := HISTORY_LENGTH + PREDICTION_TIME + 1; i < len(sub.T); i++ {
 		t := sub.T[i]
@@ -122,7 +123,7 @@ func RunRTML(groundtruth, subchan, predchan chan Point) {
 			panic(err)
 		}
 
-		predchan <- Point{t, nn.OutputLayer().Activation[0]}
+		predchan <- Point{t - float64(HISTORY_LENGTH)/sub.SampleRate, nn.OutputLayer().Activation[0]}
 		g.Update()
 		count++
 		if count >= CHANSIZE {
@@ -141,6 +142,10 @@ func RunRTML(groundtruth, subchan, predchan chan Point) {
 
 }
 
+func rmse(theta1, theta2 float32) float32 {
+	return float32(math.Sqrt(math.Pow(float64(theta1-theta2), 2)))
+}
+
 var groundchannel chan Point
 var groundX []float32
 var groundY []float32
@@ -150,6 +155,8 @@ var subY []float32
 var predchannel chan Point
 var predX []float32
 var predY []float32
+var rmseX []float32
+var rmseY []float32
 
 func loop() {
 	// first, check if we got any new asynchronous data and flush
@@ -193,6 +200,48 @@ flushedsub:
 
 flushedpred:
 
+	if len(predX) > 0 {
+		// subX[i] should be at right around the start of the
+		// predictions
+		i := 0
+		for subX[i] < predX[0] {
+			i++
+		}
+
+		// first time, since we'll key of of rmseX later, this has to
+		// be handled separately
+		if len(rmseX) == 0 {
+			rmseX = append(rmseX, predX[0])
+			rmseY = append(rmseY, rmse(predY[0], subY[i]))
+		}
+
+		// This is more complicated than it strictly needs to be,
+		// because I want to account for pred and sub having
+		// potentially different X values. The right way to do this
+		// would be to interpolate both to have exactly aligned X
+		// values.
+		for len(rmseX) < len(predX) {
+			x := rmseX[len(rmseX)-1]
+			i := 0
+			for predX[i] < x {
+				i++
+			}
+			i++
+
+			j := 0
+			for subX[j] < predX[i] {
+				j++
+			}
+
+			rmseX = append(rmseX, predX[i])
+			rmseY = append(rmseY, rmse(predY[i], subY[j]))
+		}
+	}
+
+	// for i, x := range rmseX {
+	//         fmt.Printf("x=%v y=%v\n", x, rmseY[i])
+	// }
+
 	g.SingleWindow("RTML", g.Layout{
 		g.SplitLayout("split1", g.DirectionVertical, false, 300,
 			g.Wrapper(func() {
@@ -212,13 +261,14 @@ flushedpred:
 			g.Wrapper(func() {
 
 				// no data to plot yet
-				if len(predX) == 0 {
+				if len(predX) == 0 || len(subX) == 0 || len(rmseX) == 0 {
 					return
 				}
 
 				if (imgui.BeginPlot("Predicted Signal", "t", "s", imgui.Vec2{-1, -1}, int(imgui.ImPlotFlags_Default), int(imgui.ImPlotAxisFlags_Default), int(imgui.ImPlotAxisFlags_Default), int(imgui.ImPlotAxisFlags_Auxiliary), int(imgui.ImPlotAxisFlags_Auxiliary))) {
 					imgui.PlotLinePoints("predicted", predX, predY, 0)
 					imgui.PlotLinePoints("subsampled", subX, subY, 0)
+					imgui.PlotLinePoints("RMSE", rmseX, rmseY, 0)
 					imgui.EndPlot()
 				}
 
@@ -239,6 +289,9 @@ func main() {
 	predchannel = make(chan Point, CHANSIZE)
 	predX = make([]float32, 0)
 	predY = make([]float32, 0)
+
+	rmseX = make([]float32, 0)
+	rmseY = make([]float32, 0)
 
 	go RunRTML(groundchannel, subchannel, predchannel)
 

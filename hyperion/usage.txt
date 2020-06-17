@@ -1,0 +1,38 @@
+## How to use the database script (dbtool.py)
+
+To query the results database, you can use the `dbtool.py` python script.
+
+It has no dependencies outside the Python3 standard library, so you can run it directly with:
+
+    python3 dbtool.py COMMAND DATABASE_FILENAME
+
+Commands supported:
+
+ - `insert` :: Intended to help automate recording batch runs. Takes a JSON dictionary on STDIN, and saves the contents as a row in the database.
+ - `insert_manual` :: Intended to allow after-the-fact addition of records. Requires providing every database column value as arguments on the command line.
+ - `query` :: Allows running arbitrary queries against the database. Results are printed to STDOUT as CSV-formatted data, with column headers on the first row.
+
+
+## How to use the grid plotting tool (plot.py)
+
+To plot results from a particular run (or set of runs), you need to query the SQLite results database.
+
+Query conditions can be composed sequentially using the `--where` flag multiple times, as shown in the examples below.
+
+The general format of running the command is:
+
+    python3 plot.py --where QUERY ... DATABASE
+
+### Plotting all runs from a particular dataset
+
+Let's say we want to plot all runs of the `5k-composite.json` dataset where:
+
+ - 10 neurons were used on the hidden layer.
+ - `relu` was used as the activation function.
+
+That query would look like the following:
+
+    python3 plot.py results.db --where "layers = '10'" --where "dataset = '5k-composite.json'" --where "activation = 'relu'"
+
+Since the `--where` flags are converted into one large aggregate SQL query behind-the-scenes, order is not significant for the flags.
+

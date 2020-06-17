@@ -19,7 +19,7 @@ const (
 	SUBSAMPLE       float64 = 0.25
 	PREDICTION_TIME int     = 50
 	CHANSIZE        int     = 256
-	ALPHA           float64 = 0.001
+	ALPHA           float64 = 0.1
 	DATASET_SIZE    float64 = 5
 )
 
@@ -80,12 +80,19 @@ func (sig *Signal) Subsample(rate float64) *Signal {
 }
 
 func RunRTML(groundtruth, subchan, predchan chan Point) {
+	// sig, err := GenerateSyntheticData(
+	//         SAMPLE_RATE,                   // sample_rate
+	//         DATASET_SIZE,                  // time
+	//         []float64{20, 37, 78, 12, 54}, // freqs
+	//         []float64{0, 1, 2, 3, 5},      // phases
+	//         []float64{1, 2, 3, 0.7, 2.3},  // amplitudes
+	// )
 	sig, err := GenerateSyntheticData(
-		SAMPLE_RATE,                   // sample_rate
-		DATASET_SIZE,                  // time
-		[]float64{20, 37, 78, 12, 54}, // freqs
-		[]float64{0, 1, 2, 3, 5},      // phases
-		[]float64{1, 2, 3, 0.7, 2.3},  // amplitudes
+		SAMPLE_RATE,   // sample_rate
+		DATASET_SIZE,  // time
+		[]float64{10}, // freqs
+		[]float64{0},  // phases
+		[]float64{1},  // amplitudes
 	)
 
 	count := 0 // used to know when we need to force a GUI update
@@ -135,7 +142,13 @@ func RunRTML(groundtruth, subchan, predchan chan Point) {
 		// now make a prediction
 		nn.ForwardPass(sub.S[i-PREDICTION_TIME : i])
 
-		predchan <- Point{t - float64(HISTORY_LENGTH+1)/sub.SampleRate, nn.OutputLayer().Activation[0]}
+		// predchan <- Point{t - float64(HISTORY_LENGTH+1)/sub.SampleRate, nn.OutputLayer().Activation[0]}
+		// predchan <- Point{t, nn.OutputLayer().Activation[0]}
+		// predchan <- Point{t - float64(HISTORY_LENGTH+1)/sub.SampleRate, nn.OutputLayer().Activation[0]}
+
+		// XXX: where does 13 come from?!
+		predchan <- Point{t + float64(20)/sub.SampleRate, nn.OutputLayer().Activation[0]}
+
 		g.Update()
 		count++
 		if count >= CHANSIZE {
@@ -236,12 +249,17 @@ flushedpred:
 			j := 0
 			for subX[j] < predX[i] {
 				j++
+				if j >= len(subX) {
+					goto rmsedone
+				}
 			}
 
 			rmseX = append(rmseX, predX[i])
 			rmseY = append(rmseY, rmse(predY[i], subY[j]))
 		}
 	}
+
+rmsedone:
 
 	// for i, x := range rmseX {
 	//         fmt.Printf("x=%v y=%v\n", x, rmseY[i])

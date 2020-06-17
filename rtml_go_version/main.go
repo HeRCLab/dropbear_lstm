@@ -19,7 +19,7 @@ const (
 	SUBSAMPLE       float64 = 0.25
 	PREDICTION_TIME int     = 50
 	CHANSIZE        int     = 256
-	ALPHA           float64 = 0.1
+	ALPHA           float64 = 0.001
 	DATASET_SIZE    float64 = 5
 )
 
@@ -117,11 +117,23 @@ func RunRTML(groundtruth, subchan, predchan chan Point) {
 	nn := mlp.NewMLP(ALPHA, mlp.ReLU, mlp.ReLUDeriv, HISTORY_LENGTH, HIDDEN_SIZE, PREDICTION_TIME)
 
 	for i := HISTORY_LENGTH + PREDICTION_TIME + 1; i < len(sub.T); i++ {
+
+		// first train with the available data...
 		t := sub.T[i]
 		err := nn.ForwardPass(sub.S[i-HISTORY_LENGTH-PREDICTION_TIME-1 : i-PREDICTION_TIME-1])
 		if err != nil {
 			panic(err)
 		}
+
+		err = nn.BackwardPass(sub.S[i-HISTORY_LENGTH-PREDICTION_TIME-1 : i-PREDICTION_TIME-1])
+		if err != nil {
+			panic(err)
+		}
+
+		nn.UpdateWeights()
+
+		// now make a prediction
+		nn.ForwardPass(sub.S[i-PREDICTION_TIME : i])
 
 		predchan <- Point{t - float64(HISTORY_LENGTH+1)/sub.SampleRate, nn.OutputLayer().Activation[0]}
 		g.Update()
@@ -130,13 +142,6 @@ func RunRTML(groundtruth, subchan, predchan chan Point) {
 			g.Update()
 			count = 0
 		}
-
-		err = nn.BackwardPass(sub.S[i-PREDICTION_TIME : i])
-		if err != nil {
-			panic(err)
-		}
-
-		nn.UpdateWeights()
 
 	}
 

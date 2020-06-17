@@ -88,11 +88,11 @@ func RunRTML(groundtruth, subchan, predchan chan Point) {
 	//         []float64{1, 2, 3, 0.7, 2.3},  // amplitudes
 	// )
 	sig, err := GenerateSyntheticData(
-		SAMPLE_RATE,   // sample_rate
-		DATASET_SIZE,  // time
-		[]float64{10}, // freqs
-		[]float64{0},  // phases
-		[]float64{1},  // amplitudes
+		SAMPLE_RATE,            // sample_rate
+		DATASET_SIZE,           // time
+		[]float64{10, 20, 37},  // freqs
+		[]float64{0, 1, 3},     // phases
+		[]float64{1, 0.8, 1.2}, // amplitudes
 	)
 
 	count := 0 // used to know when we need to force a GUI update
@@ -126,7 +126,6 @@ func RunRTML(groundtruth, subchan, predchan chan Point) {
 	for i := HISTORY_LENGTH + PREDICTION_TIME + 1; i < len(sub.T); i++ {
 
 		// first train with the available data...
-		t := sub.T[i]
 		err := nn.ForwardPass(sub.S[i-HISTORY_LENGTH-PREDICTION_TIME-1 : i-PREDICTION_TIME-1])
 		if err != nil {
 			panic(err)
@@ -140,14 +139,16 @@ func RunRTML(groundtruth, subchan, predchan chan Point) {
 		nn.UpdateWeights()
 
 		// now make a prediction
-		nn.ForwardPass(sub.S[i-PREDICTION_TIME : i])
+		nn.ForwardPass(sub.S[i-HISTORY_LENGTH : i])
 
-		// predchan <- Point{t - float64(HISTORY_LENGTH+1)/sub.SampleRate, nn.OutputLayer().Activation[0]}
+		t := sub.T[i-HISTORY_LENGTH] // time of Activation[0]
+
+		// predchan <- Point{t + float64(HISTORY_LENGTH)/sub.SampleRate, nn.OutputLayer().Activation[0]}
 		// predchan <- Point{t, nn.OutputLayer().Activation[0]}
-		// predchan <- Point{t - float64(HISTORY_LENGTH+1)/sub.SampleRate, nn.OutputLayer().Activation[0]}
+		predchan <- Point{t - float64(HISTORY_LENGTH+1)/sub.SampleRate, nn.OutputLayer().Activation[0]}
 
-		// XXX: where does 13 come from?!
-		predchan <- Point{t + float64(20)/sub.SampleRate, nn.OutputLayer().Activation[0]}
+		// XXX: where does this magic number come from?!
+		// predchan <- Point{t + float64(20)/sub.SampleRate, nn.OutputLayer().Activation[0]}
 
 		g.Update()
 		count++

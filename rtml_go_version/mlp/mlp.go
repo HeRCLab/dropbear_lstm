@@ -55,7 +55,8 @@ func (l *Layer) SetWeight(thisNeuron, prevNeuron int, newWeight float64) {
 	if l.Prev == nil {
 		return
 	}
-	l.Weight[thisNeuron*l.Prev.TotalNeurons()+prevNeuron] = newWeight
+	target := thisNeuron*l.Prev.TotalNeurons() + prevNeuron
+	l.Weight[target] = newWeight
 }
 
 func NewLayer(size int, prev, next *Layer, g, gprime func(float64) float64) *Layer {
@@ -286,8 +287,9 @@ func (nn *MLP) UpdateWeights() {
 				// layer.Prev.Delta[j] is Δ[j]
 				//
 				// nn.Alpha is α
-				layer.SetWeight(i, j,
-					layer.GetWeight(i, j)+nn.Alpha*layer.Activation[i]*layer.Prev.Delta[j])
+				prevWeight := layer.GetWeight(i, j)
+				newWeight := prevWeight + nn.Alpha*layer.Activation[i]*layer.Prev.Delta[j]
+				layer.SetWeight(i, j, newWeight)
 
 				// we also update the bias at this point,
 				// keeping in mind that the a_i for the bias is

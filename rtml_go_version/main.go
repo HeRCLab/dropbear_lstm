@@ -12,14 +12,14 @@ import (
 )
 
 const (
-	HISTORY_LENGTH  int     = 5
+	HISTORY_LENGTH  int     = 10
 	HIDDEN_SIZE     int     = 10
 	SAMPLE_RATE     float64 = 5000
 	SUBSAMPLE       float64 = 0.25
-	PREDICTION_TIME int     = 5
+	PREDICTION_TIME int     = 10
 	CHANSIZE        int     = 256
-	ALPHA           float64 = 0.1
-	DATASET_SIZE    float64 = 5 // number of seconds to run the model for
+	ALPHA           float64 = 0.0001
+	DATASET_SIZE    float64 = 60 // number of seconds to run the model for
 )
 
 type Signal struct {
@@ -78,13 +78,13 @@ func (sig *Signal) Subsample(rate float64) *Signal {
 	return sub
 }
 
-func RunRTML(groundtruth, subchan, predchan chan Point) {
+func RunRTML(groundtruth, subchan, predchan, biaschan chan Point) {
 	sig, err := GenerateSyntheticData(
-		SAMPLE_RATE,  // sample_rate
-		DATASET_SIZE, // time
-		[]float64{2, 3.7, 0.780, 0.012, 0.0054, 0.00013}, // freqs
-		[]float64{0, 1, 2, 3, 5, 1},                      // phases
-		[]float64{1, 2, 3, 0.7, 2.3, 1},                  // amplitudes
+		SAMPLE_RATE,                              // sample_rate
+		DATASET_SIZE,                             // time
+		[]float64{2, 3.7, 7.80, 0.12, 0.54, 1.3}, // freqs
+		[]float64{0, 1, 2, 3, 5, 1},              // phases
+		[]float64{1, 2, 3, 0.7, 2.3, 1},          // amplitudes
 	)
 	// sig, err := GenerateSyntheticData(
 	//         SAMPLE_RATE,            // sample_rate
@@ -120,17 +120,20 @@ func RunRTML(groundtruth, subchan, predchan chan Point) {
 		}
 	}
 
-	nn := mlp.NewMLP(ALPHA, mlp.ReLU, mlp.ReLUDeriv, HISTORY_LENGTH, HIDDEN_SIZE, PREDICTION_TIME)
+	// nn := mlp.NewMLP(ALPHA, mlp.ReLU, mlp.ReLUDeriv, HISTORY_LENGTH, HIDDEN_SIZE, 1)
+	nn := mlp.NewMLP(ALPHA, mlp.Identity, mlp.Unit, HISTORY_LENGTH, HIDDEN_SIZE, 1)
+	fmt.Printf("pre-training weights for layer 1 %v\n", nn.Layer[1].Weight)
+	fmt.Printf("pre-training biases for layer 1 %v\n", nn.Layer[1].Bias)
 
-	for i := HISTORY_LENGTH + 2*PREDICTION_TIME + 2; i < len(sub.T); i++ {
+	for i := 2*HISTORY_LENGTH + 2*PREDICTION_TIME + 2; i < len(sub.T); i++ {
 
 		// first train with the available data...
-		err := nn.ForwardPass(sub.S[i-HISTORY_LENGTH-2*PREDICTION_TIME-2 : i-HISTORY_LENGTH-PREDICTION_TIME-2])
+		err := nn.ForwardPass(sub.S[i-2*HISTORY_LENGTH-2*PREDICTION_TIME-2 : i-HISTORY_LENGTH-2*PREDICTION_TIME-2])
 		if err != nil {
 			panic(err)
 		}
 
-		err = nn.BackwardPass(sub.S[i-HISTORY_LENGTH-PREDICTION_TIME-1 : i-PREDICTION_TIME-1])
+		err = nn.BackwardPass(sub.S[i-HISTORY_LENGTH-PREDICTION_TIME-1 : i-HISTORY_LENGTH-PREDICTION_TIME])
 		if err != nil {
 			panic(err)
 		}
@@ -138,13 +141,15 @@ func RunRTML(groundtruth, subchan, predchan chan Point) {
 		nn.UpdateWeights()
 
 		// now make a prediction
-		nn.ForwardPass(sub.S[i-PREDICTION_TIME : i])
+		nn.ForwardPass(sub.S[i-HISTORY_LENGTH-PREDICTION_TIME : i-PREDICTION_TIME])
 
-		t := sub.T[i-PREDICTION_TIME] // time of Activation[0]
+		// t := sub.T[i-PREDICTION_TIME] // time of Activation[0]
+		// t := sub.T[i-PREDICTION_TIME] - float64(HISTORY_LENGTH+1)/sub.SampleRate
+		// t := sub.T[i] // time of Activation[9]
+		t := sub.T[i] - float64(PREDICTION_TIME)/sub.SampleRate
 
-		// predchan <- Point{t + float64(HISTORY_LENGTH)/sub.SampleRate, nn.OutputLayer().Activation[0]}
-		// predchan <- Point{t, nn.OutputLayer().Activation[0]}
-		predchan <- Point{t - float64(HISTORY_LENGTH+1)/sub.SampleRate, nn.OutputLayer().Activation[0]}
+		predchan <- Point{t, nn.OutputLayer().Output[0]}
+		biaschan <- Point{t, nn.OutputLayer().Bias[0]}
 
 		// XXX: where does this magic number come from?!
 		// predchan <- Point{t + float64(20)/sub.SampleRate, nn.OutputLayer().Activation[0]}
@@ -157,6 +162,9 @@ func RunRTML(groundtruth, subchan, predchan chan Point) {
 		}
 
 	}
+
+	fmt.Printf("post-training weights for layer 1 %v\n", nn.Layer[1].Weight)
+	fmt.Printf("psot-training biases for layer 1 %v\n", nn.Layer[1].Bias)
 
 }
 
@@ -175,6 +183,9 @@ var predX []float32
 var predY []float32
 var rmseX []float32
 var rmseY []float32
+var biaschannel chan Point
+var biasX []float32
+var biasY []float32
 
 func loop() {
 	// first, check if we got any new asynchronous data and flush
@@ -217,6 +228,19 @@ flushedsub:
 	}
 
 flushedpred:
+
+	for {
+		select {
+		case p := <-biaschannel:
+			biasX = append(biasX, float32(p.X))
+			biasY = append(biasY, float32(p.Y))
+		default:
+			// we have exhausted all of the data available
+			goto flushedbias
+		}
+	}
+
+flushedbias:
 
 	if len(predX) > 0 {
 		// subX[i] should be at right around the start of the
@@ -261,10 +285,6 @@ flushedpred:
 
 rmsedone:
 
-	// for i, x := range rmseX {
-	//         fmt.Printf("x=%v y=%v\n", x, rmseY[i])
-	// }
-
 	g.SingleWindow("RTML", g.Layout{
 		g.SplitLayout("split1", g.DirectionVertical, false, 300,
 			g.Wrapper(func() {
@@ -292,6 +312,7 @@ rmsedone:
 					imgui.PlotLinePoints("predicted", predX, predY, 0)
 					imgui.PlotLinePoints("subsampled", subX, subY, 0)
 					imgui.PlotLinePoints("RMSE", rmseX, rmseY, 0)
+					imgui.PlotLinePoints("output bias", biasX, biasY, 0)
 					imgui.EndPlot()
 				}
 
@@ -313,10 +334,14 @@ func main() {
 	predX = make([]float32, 0)
 	predY = make([]float32, 0)
 
+	biaschannel = make(chan Point, CHANSIZE)
+	biasX = make([]float32, 0)
+	biasY = make([]float32, 0)
+
 	rmseX = make([]float32, 0)
 	rmseY = make([]float32, 0)
 
-	go RunRTML(groundchannel, subchannel, predchannel)
+	go RunRTML(groundchannel, subchannel, predchannel, biaschannel)
 
 	wnd := g.NewMasterWindow("Hello world", 700, 800, 0, nil)
 	wnd.Main(loop)

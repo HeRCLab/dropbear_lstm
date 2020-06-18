@@ -1,8 +1,8 @@
-function [build_ann,pred] = build_ann (x_train,y_train,neurons,epochs,varargin)
+function [build_ann,pred] = build_ann (x_train,y_train,neurons,epochs,alpha,varargin)
 
-global output_biases;
+global deltas_output;
 
-if nargin==5
+if nargin==6
     weights_hidden = varargin{1}.weights_hidden;
     bias_hidden = varargin{1}.bias_hidden;
     weights_output = varargin{1}.weights_output;
@@ -47,9 +47,6 @@ for i=1:size(neurons,2)
     delta_hidden{1,i} = zeros(size(weights_hidden(i)));
 end
 delta_output = zeros(1,size(weights_output,1));
-
-% setup
-alpha = 1e-2;
 
 error_progression=zeros(1,epochs);
 
@@ -126,7 +123,7 @@ for i=1:epochs
     
   end
   
-  output_biases = [output_biases,bias_output];
+  deltas_output = [deltas_output,delta_output];
   error_progression(1,i)=evaluate_net(weights_hidden,bias_hidden,weights_output,bias_output,x_train,y_train);
   
 end

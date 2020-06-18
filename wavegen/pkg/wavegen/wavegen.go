@@ -5,6 +5,7 @@ package wavegen
 import (
 	"fmt"
 	"math"
+	"math/rand"
 )
 
 // WaveParameters is used to store the parameters that generate a particular
@@ -18,7 +19,7 @@ type WaveParameters struct {
 	// seconds
 	Offset float64
 
-	// Duration is the number of of samples that should be generated
+	// Duration is the number of seconds of samples that should be generated
 	Duration float64
 
 	// Frequencies is the list of frequencies of Sin wave that should be
@@ -37,7 +38,8 @@ type WaveParameters struct {
 	// be generated for the given signal. These noise functions are
 	// understood:
 	//
-	// * "normal" (rand.NormFloat64)
+	// * "pseudo" (rand.Float64)
+	// * "none" (no noise)
 	// * "" (no noise)
 	Noises []string
 
@@ -193,32 +195,127 @@ func (s *Signal) Interpolate(times ...float64) []Sample {
 	return interpolated
 }
 
+// ValidateParameters will ensure that the parameters are valid.
+//
+// If the noises or noise magnitudes are empty, then they will be filled to
+// an appropriate length with default values.
+func (w *WaveParameters) ValidateParameters() error {
+	// if omitted, assume no noise is desired
+	if len(w.Noises) == 0 {
+		w.Noises = make([]string, len(w.Frequencies))
+		for i := 0; i < len(w.Frequencies); i++ {
+			w.Noises[i] = "none"
+		}
+	}
+
+	// if omitted, assume magnitudes of 1.0
+	if len(w.NoiseMagnitudes) == 0 {
+		w.NoiseMagnitudes = make([]float64, len(w.Frequencies))
+		for i := 0; i < len(w.Frequencies); i++ {
+			w.NoiseMagnitudes[i] = 1.0
+		}
+	}
+
+	if len(w.Noises) != len(w.Frequencies) {
+		return fmt.Errorf("Invalid parameters: length of noises does not match length of frequencies")
+	}
+
+	if len(w.Phases) != len(w.Frequencies) {
+		return fmt.Errorf("Invalid parameters: length of phases does not match length of frequencies")
+	}
+
+	if len(w.Amplitudes) != len(w.Frequencies) {
+		return fmt.Errorf("Invalid parameters: length of amplitudes does not match length of frequencies")
+	}
+
+	if len(w.NoiseMagnitudes) != len(w.Frequencies) {
+		return fmt.Errorf("Invalid parameters: length of noise magnitudes does not match length of frequencies")
+	}
+
+	return nil
+}
+
+// Noise generates a randomized noise value for the index-th component of
+// the wave parameter. An index of -1 indicates that the global noise should
+// be generated instead.
+func (w *WaveParameters) Noise(index int) (float64, error) {
+	err := w.ValidateParameters()
+	if err != nil {
+		return 0, err
+	}
+
+	if index < -1 || index >= len(w.Frequencies) {
+		return 0, fmt.Errorf("Index %d out of bound for parameters of %d components", index, len(w.Frequencies))
+	}
+
+	kind := ""
+	if index == -1 {
+		kind = w.GlobalNoise
+	} else {
+		kind = w.Noises[index]
+	}
+
+	v := 0.0
+	switch kind {
+	case "pseudo":
+		v = rand.Float64()
+	case "none":
+		v = 0
+	case "":
+		v = 0
+	default:
+		return 0, fmt.Errorf("Unknown noise kind '%s'", kind)
+
+	}
+
+	if index == -1 {
+		return w.GlobalNoiseMagnitude * v, nil
+	} else {
+		return w.NoiseMagnitudes[index] * v, nil
+	}
+}
+
 // GenerateSyntheticData generates a signal which is a composition of several
 // Sin functions of the given frequencies, phases, and amplitudes, with noise
 // optionally applied to each signal, and optionally applied to the data
 // overall.
-// func (w *WaveParameters) GenerateSyntheticData(*Signal, error) {
-//         // number of points to generate
-//         points := int(math.Ceil(sample_rate * time))
-//         sample_period := 1.0 / sample_rate
-//
-//         if (len(freqs) != len(phases)) || (len(freqs) != len(amps)) || (len(phases) != len(amps)) {
-//                 return nil, fmt.Errorf("freqs, phases, amps must be the same length")
-//         }
-//
-//         sig := &Signal{
-//                 T:          make([]float64, points),
-//                 S:          make([]float64, points),
-//                 SampleRate: sample_rate,
-//         }
-//
-//         for i := 0; i < points; i++ {
-//                 sig.S[i] = 0
-//                 sig.T[i] = sample_period * float64(i)
-//                 for j, freq := range freqs {
-//                         sig.S[i] += amps[j] * math.Sin(2*math.Pi*freq*sig.T[i]+phases[j])
-//                 }
-//         }
-//
-//         return sig, nil
-// }
+func (w *WaveParameters) GenerateSyntheticData() (*Signal, error) {
+	// number of points to generate
+	points := int(math.Ceil(w.SampleRate * w.Duration))
+	samplePeriod := 1.0 / w.SampleRate
+
+	err := w.ValidateParameters()
+	if err != nil {
+		return nil, err
+	}
+
+	sig := &Signal{
+		T:          make([]float64, points),
+		S:          make([]float64, points),
+		SampleRate: w.SampleRate,
+	}
+
+	for i := 0; i < points; i++ {
+		sig.S[i] = 0
+		sig.T[i] = samplePeriod * float64(i)
+		for j, freq := range w.Frequencies {
+
+			// component noise
+			n, err := w.Noise(j)
+			if err != nil {
+				return nil, err
+			}
+
+			sig.S[i] += w.Amplitudes[j]*math.Sin(2*math.Pi*freq*sig.T[i]+w.Phases[j]) + n
+		}
+
+		// global noise
+		n, err := w.Noise(-1)
+		if err != nil {
+			return nil, err
+		}
+		sig.S[i] = sig.S[i] + n
+	}
+
+	return sig, nil
+}

@@ -3,6 +3,8 @@ package wavegen
 import (
 	"math"
 	"testing"
+
+	"github.com/montanaflynn/stats"
 )
 
 func TestValidateIndex(t *testing.T) {
@@ -168,4 +170,152 @@ func TestInterpolation(t *testing.T) {
 				i, c.time, res[0], c.expect)
 		}
 	}
+}
+
+func TestValidateParameters(t *testing.T) {
+	// make sure filling in the noises and noise magnitudes works
+	w := &WaveParameters{
+		Frequencies: []float64{1, 2},
+	}
+	err := w.ValidateParameters()
+
+	if err == nil {
+		t.Errorf("failed to detect invalid parameters")
+	}
+
+	if len(w.Noises) != 2 {
+		t.Errorf("didn't fill in Noises")
+	}
+
+	if len(w.NoiseMagnitudes) != 2 {
+		t.Errorf("didn't fill in Noises")
+	}
+
+	// check mismatched noises and frequencies
+	w.Noises = append(w.Noises, "")
+	err = w.ValidateParameters()
+	if err == nil {
+		t.Errorf("failed to detect mismatched noises and frequencies")
+	}
+
+	w.Noises = make([]string, 0)
+	w.Phases = []float64{3, 4}
+	err = w.ValidateParameters()
+	if err == nil {
+		t.Errorf("failed to detect mismatched amplitudes and frequencies")
+	}
+
+	w.Amplitudes = []float64{5, 6}
+	w.NoiseMagnitudes = []float64{1, 2, 3}
+	err = w.ValidateParameters()
+	if err == nil {
+		t.Errorf("failed to detect mismatched noise magnitudes and frequencies")
+	}
+
+	w.NoiseMagnitudes = []float64{}
+	err = w.ValidateParameters()
+	if err != nil {
+		t.Errorf("correct parameters incorrectly errored")
+	}
+}
+
+func TestNoise(t *testing.T) {
+	runcount := 10000
+	eta := 0.1
+
+	w := &WaveParameters{
+		SampleRate:           50,
+		Offset:               0,
+		Duration:             10,
+		Frequencies:          []float64{1, 2},
+		Phases:               []float64{0, 2},
+		Amplitudes:           []float64{1, 2},
+		Noises:               []string{"none", "pseudo"},
+		NoiseMagnitudes:      []float64{1.0, 2.0},
+		GlobalNoise:          "pseudo",
+		GlobalNoiseMagnitude: 3.0,
+	}
+
+	cases := []struct {
+		index        int
+		expectMedian float64
+		expectMin    float64
+		expectMax    float64
+	}{
+		{0, 0, 0, 0},
+		{1, 1.0, 0.0, 2.0},
+		{-1, 1.5, 0.0, 3.0},
+	}
+
+	for i, c := range cases {
+		values := make([]float64, runcount)
+		for j, _ := range values {
+			var err error
+			values[j], err = w.Noise(c.index)
+			if err != nil {
+				t.Error(err)
+			}
+			if (values[j] < c.expectMin) || (values[j] > c.expectMax) {
+				t.Errorf("Test case %d: Value %f out of bounds %f...%f",
+					i, values[j], c.expectMin, c.expectMax)
+			}
+		}
+		median, err := stats.Median(values)
+		if err != nil {
+			t.Error(err)
+		}
+		if math.Abs(median-c.expectMedian) > eta {
+			t.Errorf("Test case %d: expected median value %f, but got %f",
+				i, c.expectMedian, median)
+		}
+	}
+
+	_, err := w.Noise(-2)
+	if err == nil {
+		t.Errorf("Noise failed to detect out of bounds index")
+	}
+
+	_, err = w.Noise(2)
+	if err == nil {
+		t.Errorf("Noise failed to detect out of bounds index")
+	}
+
+}
+
+func TestWavegen(t *testing.T) {
+	eta := 0.0000001
+
+	w := &WaveParameters{
+		SampleRate:           10000,
+		Offset:               0,
+		Duration:             10,
+		Frequencies:          []float64{1},
+		Phases:               []float64{0},
+		Amplitudes:           []float64{1},
+		Noises:               []string{"none"},
+		NoiseMagnitudes:      []float64{1.0},
+		GlobalNoise:          "none",
+		GlobalNoiseMagnitude: 0.0,
+	}
+
+	sig, err := w.GenerateSyntheticData()
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	res := sig.Interpolate(0, 0.25, 0.5, 0.75, 1)
+	expect := []float64{0, 1, 0, -1, 0}
+
+	if len(res) != len(expect) {
+		t.Fatalf("Wrong number of samples, Interpolate() is broken!")
+	}
+
+	for i, v := range res {
+		if math.Abs(v.S-expect[i]) > eta {
+			t.Errorf("Test case %d: expected signal value %f, got %f",
+				i, expect[i], v.S)
+		}
+	}
+
 }

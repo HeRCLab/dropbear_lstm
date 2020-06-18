@@ -1,4 +1,4 @@
-// package wavegen is used for generating synthetic test data for the Dropbear
+// Package wavegen is used for generating synthetic test data for the Dropbear
 // LSTM project.
 package wavegen
 
@@ -62,13 +62,13 @@ type WaveParameters struct {
 // that T ans S are the same size.
 type Signal struct {
 	// signal values
-	s []float64
+	S []float64
 
-	// sample rate in Hz
-	sampleRate float64
+	T []float64
 
-	// offset in seconds of the first signal value from t=0
-	offset float64
+	// sample rate in Hz, note that this is set by the caller, this library
+	// cannot guarantee the accuracy of this value
+	SampleRate float64
 }
 
 // Sample represents a single sample from a Signal
@@ -81,25 +81,35 @@ type Sample struct {
 	S float64
 }
 
-// SampleRate returns the signal's sample rate
-func (s *Signal) SampleRate() float64 {
-	return s.sampleRate
+// ValidateIndex ensures that the specified index can be retrieved from the
+// signal, and generates an error if not.
+func (s *Signal) ValidateIndex(i int) error {
+	if len(s.S) != len(s.T) {
+		return fmt.Errorf("Signal is corrupt, S array is length %d, but T array is length %T",
+			len(s.S), len(s.T))
+	}
+
+	if i < 0 || i >= s.Size() {
+		return fmt.Errorf("Index %d out of bounds for signal of length %d",
+			i, s.Size())
+	}
+
+	return nil
 }
 
-// Returns the number of samples which a Signal contains.
+// Size returns the number of samples which a Signal contains.
 func (s *Signal) Size() int {
-	return len(s.s)
+	return len(s.S)
 }
 
 // Index retrieves the ith sample value.
 func (s *Signal) Index(i int) (Sample, error) {
-	if i < 0 || i >= len(s.s) {
-		return Sample{0,0}, fmt.Errorf("Index out of bounds %d for signal of length %d", i, len(s.s))
+	err := s.ValidateIndex(i)
+	if err != nil {
+		return Sample{}, err
 	}
 
-	t := s.offset + float64(i) * (1 / s.sampleRate)
-	s := s.s[i]
-	return Sample{T: t, S:s}
+	return Sample{T: s.T[i], S: s.S[i]}, nil
 }
 
 // MustIndex works identically to Index(), but calls panic() if an error occurs
@@ -121,26 +131,30 @@ func (s *Signal) MustIndex(i int) Sample {
 // Note that time includes the offset, so time=0 when the offset is 1 second
 // will return 0, since it is before the beginning of the signal data.
 func (s *Signal) NearestIndex(time float64, overshoot bool) int {
-	if time < s.offset {
+	if s.Size() == 0 {
 		return 0
 	}
 
-	t := s.offset
+	if time < s.T[0] {
+		return 0
+	}
+
 	i := 0
 	for {
-		if overshoot && (t >= time) {
+		t := s.T[i]
+
+		if t == time {
 			return i
-		} else if (t == time) || ((t + 1/s.sampleRate) >= time) {
+		} else if overshoot && (t >= time) {
+			return i
+		} else if (t != time) && (i+1 >= s.Size()) {
+			// prevent the next case from going out of bounds
+			return s.Size() - 1
+		} else if (!overshoot) && ((s.T[i+1]) > time) {
 			return i
 		}
 
 		i++
-		t += 1 / s.sampleRate
-
-		if i >= s.Size() {
-			return s.Size() - 1
-		}
-
 	}
 }
 
@@ -149,53 +163,62 @@ func (s *Signal) NearestIndex(time float64, overshoot bool) int {
 // appropriate sample for each.
 func (s *Signal) Interpolate(times ...float64) []Sample {
 	interpolated := make([]Sample, len(times))
-	for t, i := times {
+	for i, t := range times {
 		i0 := s.NearestIndex(t, false) // undershoot
-		i1 := s.NearestIndex(t, true) // overshoot
+		i1 := s.NearestIndex(t, true)  // overshoot
 
-		t0, s0 := s.MustIndex(i0)
-		t1, s1 := s.MustIndex(i1)
+		s0 := s.MustIndex(i0)
+		s1 := s.MustIndex(i1)
 
 		// In the case where the requested value is exactly equal to a
 		// known value, we can omit the interpolation and return it
 		// directly. This would work equivalently with t1 and s1.
-		if t0 == t {
-			return Signal{T: t, S: s0}
+		if s0.T == t && s1.T == t {
+			interpolated[i] = Sample{T: t, S: s0.S}
+			continue
 		}
 
-		d0 := math.Abs(t0 - t)
-		d1 := math.Abs(t1 - t)
+		dist := math.Abs(s0.T - s1.T)
+		d0 := math.Abs(s0.T - t)
+		d1 := math.Abs(s1.T - t)
 
-		interpolated[i] = Signal{T: t, S: (d0 * s0) / (d0 + d1) + (d1 * s1) / (d0 + d1)}
+		if dist == 0 {
+			interpolated[i] = Sample{T: t, S: s0.S}
+			continue
+		}
+
+		interpolated[i] = Sample{T: t, S: (d0*s1.S)/(d0+d1) + (d1*s0.S)/(d0+d1)}
 	}
+
+	return interpolated
 }
 
 // GenerateSyntheticData generates a signal which is a composition of several
 // Sin functions of the given frequencies, phases, and amplitudes, with noise
 // optionally applied to each signal, and optionally applied to the data
 // overall.
-func (w *WaveParameters) GenerateSyntheticData(*Signal, error) {
-	// number of points to generate
-	points := int(math.Ceil(sample_rate * time))
-	sample_period := 1.0 / sample_rate
-
-	if (len(freqs) != len(phases)) || (len(freqs) != len(amps)) || (len(phases) != len(amps)) {
-		return nil, fmt.Errorf("freqs, phases, amps must be the same length")
-	}
-
-	sig := &Signal{
-		T:          make([]float64, points),
-		S:          make([]float64, points),
-		SampleRate: sample_rate,
-	}
-
-	for i := 0; i < points; i++ {
-		sig.S[i] = 0
-		sig.T[i] = sample_period * float64(i)
-		for j, freq := range freqs {
-			sig.S[i] += amps[j] * math.Sin(2*math.Pi*freq*sig.T[i]+phases[j])
-		}
-	}
-
-	return sig, nil
-}
+// func (w *WaveParameters) GenerateSyntheticData(*Signal, error) {
+//         // number of points to generate
+//         points := int(math.Ceil(sample_rate * time))
+//         sample_period := 1.0 / sample_rate
+//
+//         if (len(freqs) != len(phases)) || (len(freqs) != len(amps)) || (len(phases) != len(amps)) {
+//                 return nil, fmt.Errorf("freqs, phases, amps must be the same length")
+//         }
+//
+//         sig := &Signal{
+//                 T:          make([]float64, points),
+//                 S:          make([]float64, points),
+//                 SampleRate: sample_rate,
+//         }
+//
+//         for i := 0; i < points; i++ {
+//                 sig.S[i] = 0
+//                 sig.T[i] = sample_period * float64(i)
+//                 for j, freq := range freqs {
+//                         sig.S[i] += amps[j] * math.Sin(2*math.Pi*freq*sig.T[i]+phases[j])
+//                 }
+//         }
+//
+//         return sig, nil
+// }

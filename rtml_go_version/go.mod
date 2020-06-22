@@ -14,6 +14,7 @@ require (
 	github.com/cheggaaa/pb/v3 v3.0.4
 	github.com/cosiner/argv v0.1.0 // indirect
 	github.com/go-delve/delve v1.4.1 // indirect
+	github.com/herclab/wavegen v0.0.0-20200619210728-7e521bef55f8
 	github.com/mattn/go-colorable v0.1.6 // indirect
 	github.com/mattn/go-runewidth v0.0.9 // indirect
 	github.com/peterh/liner v1.2.0 // indirect

@@ -1,5 +1,5 @@
 CC = gcc
-C_OPTS = -I $(CONNXR_PATH)/include -I $(CONNXR_PATH)/src/pb -I $(CONNXR_PATH)/src/operators
+C_OPTS = -Wall -Wextra -I $(CONNXR_PATH)/include -I $(CONNXR_PATH)/src/pb -I $(CONNXR_PATH)/src/operators
 LINK_OPTS = -lm
 sources = $(wildcard *.c)
 objects = $(patsubst %.c,%.o,$(sources))

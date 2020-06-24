@@ -310,7 +310,6 @@ int main (int argc,char **argv) {
 	free(myparams->freqs);
 	free(myparams->phases);
 	free(myparams);
-	free(mysignal);
 	
 	return 0;
 }

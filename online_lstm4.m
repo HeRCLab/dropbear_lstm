@@ -4,6 +4,9 @@ close all;
 clear all;
 profile on
 
+% seed RNG
+rng(42);
+
 % parameters
 
 % signal synthesis
@@ -16,13 +19,19 @@ phases=[0, 1, 2, 3, 5, 1];
 % synthesize signal
 [x,signal] = make_signal(sample_rate,time,amps,freqs,phases);
 
+% read Puga's signal
+%data=lvm_import('Ivol_Acc_Load_1S_1STD.lvm');
+%x = data.Segment1.data(:,1);
+%signal = data.Segment1.data(:,4)';
+%sample_rate = numel(data.Segment1.data(:,1))/data.Segment1.data(end,1);
+
 % model and training parameters
 history_length = 10;
 hidden_size = 10;
 model_sample_rate = 1250;
 subsample = floor(sample_rate / model_sample_rate);
 prediction_time = 10;
-alpha = 1e-4;
+alpha = 1;
 
 % synthesize subsampled signal
 % NOTE: this uses striding, not interpolation as in the C-based model!
@@ -51,12 +60,6 @@ use_homemade = 1;
 
 % epochs
 epochs=1;
-
-% read Puga's signal
-%data=lvm_import('Ivol_Acc_Load_1S_1STD.lvm');
-%x = data.Segment1.data(:,1);
-%signal = data.Segment1.data(:,4)';
-%sample_rate = numel(data.Segment1.data(:,1))/data.Segment1.data(end,1);
 
 myfig2 = figure('Position', [20 50 1650 800]);
 hold on;

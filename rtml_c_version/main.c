@@ -2,13 +2,15 @@
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
+#include <utils.h>
+#include <onnx.pb-c.h>
 
-#define	HISTORY_LENGTH	10
+#define	HISTORY_LENGTH		10
 #define HIDDEN_SIZE		10
-#define TRAINING_WINDOW	40
+#define TRAINING_WINDOW		40
 #define SAMPLE_RATE		5000.f
 #define SUBSAMPLE		200.f
-#define PREDICTION_TIME	10
+#define PREDICTION_TIME		10
 
 struct params {
 	float sample_rate;
@@ -66,7 +68,7 @@ void generate_synthetic_data (PARAMS myparams,SIGNAL mysignal) {
 void forward_pass (struct layer *mlp) {
 	// start with second layer, since the first layer is the input layer and there's
 	// nothing to do there
-	struct layer *current_layer=mlp;
+	struct layer *current_layer=mlp->next;
 
 	while (current_layer=current_layer->next) {
 		// matrix-vector multiply
@@ -85,7 +87,10 @@ void backward_pass (struct layer *mlp,float *y) {
 	while (current_layer->next) current_layer=current_layer->next;
 
 	// handle last layer separately
-	for (int i=0;i<current_layer->neurons;i++) current_layer->deltas[i]=current_layer->outputs[i]-y[i];
+	for (int i=0;i<current_layer->neurons;i++)
+		current_layer->deltas[i]=current_layer->outputs[i]-y[i];
+
+	// move back one layer
 	current_layer=current_layer->prev;
 
 	while (current_layer->prev) {
@@ -158,12 +163,14 @@ void initialize_signal_parameters (PARAMS myparams) {
 	myparams->sample_rate=SAMPLE_RATE;
 }
 
-void initialize_mlp (struct layer *layers) {
+void initialize_mlp (struct layer *layers,Onnx__ModelProto *model) {
+	// input layer
 	layers[0].isinput=1;
 	layers[0].neurons=HISTORY_LENGTH;
 	layers[0].prev=0;
 	layers[0].next=&layers[1];
 
+	// hidden layer
 	layers[1].outputs=(float*)malloc(sizeof(float)*HISTORY_LENGTH);
 	layers[1].isinput=0;
 	layers[1].neurons=HIDDEN_SIZE;
@@ -171,17 +178,30 @@ void initialize_mlp (struct layer *layers) {
 	layers[1].next=&layers[2];
 	layers[1].weights=(float*)malloc(sizeof(float)*HIDDEN_SIZE*HISTORY_LENGTH);
 	
-	for (int i=0;i<HIDDEN_SIZE*HISTORY_LENGTH;i++) layers[1].weights[i]=(float)rand()/RAND_MAX;
+	for (int i=0;i<HIDDEN_SIZE*HISTORY_LENGTH;i++) {
+		if (model) {
+			layers[1].weights[i]=*((float *)model->graph.initializer[0]->raw_data+i)
+		} else {
+			layers[1].weights[i]=(float)rand()/RAND_MAX - 0.5f;
+		}
+	}
 	layers[1].biases=(float*)malloc(sizeof(float)*HIDDEN_SIZE);
 	for (int i=0;i<HIDDEN_SIZE;i++) layers[1].biases[i]=0.f;
 	layers[1].outputs=(float*)malloc(sizeof(float)*HIDDEN_SIZE);
 	layers[1].deltas=(float*)malloc(sizeof(float)*HIDDEN_SIZE);
 
+	// output layer
 	layers[2].isinput=1;
 	layers[2].neurons=1;
 	layers[2].prev=&layers[1];
 	layers[2].next=0;
 	layers[2].weights=(float*)malloc(sizeof(float)*HIDDEN_SIZE);
+	for (int i=0;i<HIDDEN_SIZE;i++) {
+		if (model) {
+			layers[2].weights[i]=*((float *)model->graph.initializer[2]->raw_data+i);
+		} else {
+			layers[2].weights[i]=(float)rand()/RAND_MAX - 0.5f;
+		}
 	layers[2].outputs=(float*)malloc(sizeof(float));
 	layers[2].deltas=(float *)malloc(sizeof(float));
 	layers[2].biases=(float *)malloc(sizeof(float));
@@ -219,7 +239,26 @@ void free_signal (SIGNAL mysignal) {
 	free(mysignal->s);
 }
 
-int main () {
+void extract_weights_biases (Onnx__ModelProto *model,float ***weights,float ***biases) {
+	*weights = (float **)malloc(10 * sizeof(float *));
+	
+}
+
+int main (int argc,char **argv) {
+	if (argc != 2) {
+		fprintf(stderr,"usage:\n%s <onnx file>\n",argv[0]);
+		return 1;
+	}
+
+	// open ONNX file
+	Onnx__ModelProto *model = openOnnxFile(argv[1]);
+	if (!model) {
+		char str[1024];
+		sprintf(str,"Error opening \"%s\"\n",argv[1]);
+		perror(str);
+		return 1;
+	}
+	
 	// set up signal
 	PARAMS myparams = (PARAMS)malloc(sizeof(struct params));
 	initialize_signal_parameters(myparams);
@@ -235,7 +274,7 @@ int main () {
 	
 	// set up MLP
 	struct layer layers[3];
-	initialize_mlp(layers);
+	initialize_mlp(layers,model);
 
 	// set up predicted signal
 	SIGNAL mysignal_predicted=(SIGNAL)malloc(sizeof(struct signal));

@@ -111,7 +111,6 @@ void update_weights (struct layer *mlp,float alpha) {
 	
 	while (current_layer) {
 		for (int i=0;i<current_layer->neurons;i++) {
-			float sum=0.f;
 			for (int j=0;j<current_layer->prev->neurons;j++)
 				current_layer->weights[i*current_layer->prev->neurons+j] -=
 					alpha * current_layer->deltas[i] * current_layer->prev->outputs[j];
@@ -177,10 +176,13 @@ void initialize_mlp (struct layer *layers,Onnx__ModelProto *model) {
 	layers[1].prev=&layers[0];
 	layers[1].next=&layers[2];
 	layers[1].weights=(float*)malloc(sizeof(float)*HIDDEN_SIZE*HISTORY_LENGTH);
+
+	Onnx__GraphProto *mygraph = model->graph;
+	Onnx__TensorProto **mytensor = mygraph->initializer;
 	
 	for (int i=0;i<HIDDEN_SIZE*HISTORY_LENGTH;i++) {
 		if (model) {
-			layers[1].weights[i]=*((float *)model->graph.initializer[0]->raw_data+i)
+			layers[1].weights[i]=*((float *)mytensor[0]->raw_data.data+i);
 		} else {
 			layers[1].weights[i]=(float)rand()/RAND_MAX - 0.5f;
 		}
@@ -198,10 +200,13 @@ void initialize_mlp (struct layer *layers,Onnx__ModelProto *model) {
 	layers[2].weights=(float*)malloc(sizeof(float)*HIDDEN_SIZE);
 	for (int i=0;i<HIDDEN_SIZE;i++) {
 		if (model) {
-			layers[2].weights[i]=*((float *)model->graph.initializer[2]->raw_data+i);
+			1;
+			//layers[2].weights[i]=*((float *)model->graph.initializer[2]->raw_data+i);
+			layers[2].weights[i]=*((float *)mytensor[2]->raw_data.data+i);
 		} else {
 			layers[2].weights[i]=(float)rand()/RAND_MAX - 0.5f;
 		}
+	}
 	layers[2].outputs=(float*)malloc(sizeof(float));
 	layers[2].deltas=(float *)malloc(sizeof(float));
 	layers[2].biases=(float *)malloc(sizeof(float));
@@ -237,11 +242,6 @@ void plot (SIGNAL mysignal,char *title) {
 void free_signal (SIGNAL mysignal) {
 	free(mysignal->t);
 	free(mysignal->s);
-}
-
-void extract_weights_biases (Onnx__ModelProto *model,float ***weights,float ***biases) {
-	*weights = (float **)malloc(10 * sizeof(float *));
-	
 }
 
 int main (int argc,char **argv) {
@@ -288,18 +288,30 @@ int main (int argc,char **argv) {
 	mysignal_predicted->s = (float *)malloc(mysignal_subsampled->points * sizeof(float));
 
 	// zero-pad on the left side
-	for (int i=0;i<HISTORY_LENGTH+PREDICTION_TIME;i++) {
-		mysignal_predicted->s[i] = 0.f;
-	}
-	for (int i=HISTORY_LENGTH+PREDICTION_TIME;i<mysignal_subsampled->points;i++) {
-		// make prediction based on current weights
-		layers[0].outputs = &mysignal_subsampled->s[i-HISTORY_LENGTH-PREDICTION_TIME];
-		forward_pass(layers);
-		mysignal_predicted->s[i] = layers[2].outputs[0];
+	for (int i=0;i<mysignal_subsampled->points - PREDICTION_TIME;i++) {
+		int start_of_input = i - HISTORY_LENGTH - PREDICTION_TIME;
 
-		// update weights
-		backward_pass(layers,&mysignal_subsampled->s[i]);
-		update_weights(layers,0.01);
+		if (start_of_input >= 0) {
+			// compute outputs
+			layers[0].outputs = &mysignal_subsampled->s[start_of_input];
+			forward_pass(layers);
+
+			// compute deltas
+			backward_pass(layers,&mysignal_subsampled->s[i]);
+			// update weights
+			update_weights(layers,0.01);
+		}
+
+		// make prediction
+		start_of_input = i - HISTORY_LENGTH;
+		if (start_of_input < 0) {
+			mysignal_predicted->s[i] = 0.f;
+		} else {	
+			// make a prediction
+			layers[0].outputs = &mysignal_subsampled->s[i-HISTORY_LENGTH];
+			forward_pass(layers);
+			mysignal_predicted->s[i] = layers[2].outputs[0];
+		}
 	}
 	
 	plot(mysignal_predicted,"predicted signal");	

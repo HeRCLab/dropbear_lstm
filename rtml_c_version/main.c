@@ -9,7 +9,7 @@
 #define HIDDEN_SIZE		10
 #define TRAINING_WINDOW		40
 #define SAMPLE_RATE		5000.f
-#define SUBSAMPLE		200.f
+#define SUBSAMPLE_RATE		1250.f
 #define PREDICTION_TIME		10
 
 struct params {
@@ -122,16 +122,17 @@ void update_weights (struct layer *mlp,float alpha) {
 }
 
 void subsample (SIGNAL in_signal,SIGNAL out_signal,float subsample_rate) {
+	float subsample_ratio = subsample_rate / in_signal->sample_rate;
 	int len = in_signal->points;
-	int len_new = out_signal->points = ceil(len / subsample_rate);
+	int len_new = out_signal->points = ceilf(len * subsample_ratio);
 	
-	out_signal->sample_rate = in_signal->sample_rate/subsample_rate;
+	out_signal->sample_rate = subsample_rate;
 	// allocate time and signal arrays
 	out_signal->s = (float *)malloc(sizeof(float) * len_new);
 	out_signal->t = (float *)malloc(sizeof(float) * len_new);
 	
 	for (int i=0;i<len_new;i++) {
-		float position = (float)i * subsample_rate;
+		float position = (float)i / subsample_ratio;
 		float position_frac = position - floorf(position);
 		int position_int = (int)floorf(position);
 		out_signal->s[i] = (1.f - position_frac)*
@@ -143,22 +144,31 @@ void subsample (SIGNAL in_signal,SIGNAL out_signal,float subsample_rate) {
 }
 
 void initialize_signal_parameters (PARAMS myparams) {
-	myparams->freqs = (float*)malloc(sizeof(float)*4);
-	myparams->freqs[0]=10;
-	myparams->freqs[1]=37;
-	myparams->freqs[2]=78;
-	myparams->freqs[3]=0;
-	myparams->phases = (float*)malloc(sizeof(float)*4);
+	myparams->freqs = (float*)malloc(sizeof(float)*7);
+	myparams->freqs[0]=2;
+	myparams->freqs[1]=3.7;
+	myparams->freqs[2]=7.8;
+	myparams->freqs[3]=0.12;
+	myparams->freqs[4]=0.54;
+	myparams->freqs[5]=1.3;
+	myparams->freqs[6]=0;
+	myparams->phases = (float*)malloc(sizeof(float)*7);
 	myparams->phases[0]=0;
 	myparams->phases[1]=1;
 	myparams->phases[2]=2;
-	myparams->phases[3]=0;
-	myparams->amps = (float*)malloc(sizeof(float)*4);
+	myparams->phases[3]=3;
+	myparams->phases[4]=5;
+	myparams->phases[5]=1;
+	myparams->phases[6]=0;
+	myparams->amps = (float*)malloc(sizeof(float)*7);
 	myparams->amps[0]=1;
 	myparams->amps[1]=2;
 	myparams->amps[2]=3;
-	myparams->amps[3]=4;
-	myparams->time = 2.f;
+	myparams->amps[3]=0.7;
+	myparams->amps[4]=2.3;
+	myparams->amps[5]=1;
+	myparams->amps[6]=0;
+	myparams->time = 60.f;
 	myparams->sample_rate=SAMPLE_RATE;
 }
 
@@ -269,7 +279,7 @@ int main (int argc,char **argv) {
 	plot(mysignal,"original signal");
 	
 	SIGNAL mysignal_subsampled = (SIGNAL)malloc(sizeof(struct signal));
-	subsample(mysignal,mysignal_subsampled,0.25f);
+	subsample(mysignal,mysignal_subsampled,SUBSAMPLE_RATE);
 	plot(mysignal_subsampled,"original signal subsampled");
 	
 	// set up MLP

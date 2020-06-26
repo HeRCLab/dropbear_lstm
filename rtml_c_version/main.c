@@ -9,7 +9,7 @@
 #define HIDDEN_SIZE		10
 #define TRAINING_WINDOW		40
 #define SAMPLE_RATE		5000.f
-#define SUBSAMPLE		200.f
+#define SUBSAMPLE_RATE		1250.f
 #define PREDICTION_TIME		10
 
 struct params {
@@ -111,7 +111,6 @@ void update_weights (struct layer *mlp,float alpha) {
 	
 	while (current_layer) {
 		for (int i=0;i<current_layer->neurons;i++) {
-			float sum=0.f;
 			for (int j=0;j<current_layer->prev->neurons;j++)
 				current_layer->weights[i*current_layer->prev->neurons+j] -=
 					alpha * current_layer->deltas[i] * current_layer->prev->outputs[j];
@@ -123,16 +122,17 @@ void update_weights (struct layer *mlp,float alpha) {
 }
 
 void subsample (SIGNAL in_signal,SIGNAL out_signal,float subsample_rate) {
+	float subsample_ratio = subsample_rate / in_signal->sample_rate;
 	int len = in_signal->points;
-	int len_new = out_signal->points = ceil(len / subsample_rate);
+	int len_new = out_signal->points = ceilf(len * subsample_ratio);
 	
-	out_signal->sample_rate = in_signal->sample_rate/subsample_rate;
+	out_signal->sample_rate = subsample_rate;
 	// allocate time and signal arrays
 	out_signal->s = (float *)malloc(sizeof(float) * len_new);
 	out_signal->t = (float *)malloc(sizeof(float) * len_new);
 	
 	for (int i=0;i<len_new;i++) {
-		float position = (float)i * subsample_rate;
+		float position = (float)i / subsample_ratio;
 		float position_frac = position - floorf(position);
 		int position_int = (int)floorf(position);
 		out_signal->s[i] = (1.f - position_frac)*
@@ -144,22 +144,31 @@ void subsample (SIGNAL in_signal,SIGNAL out_signal,float subsample_rate) {
 }
 
 void initialize_signal_parameters (PARAMS myparams) {
-	myparams->freqs = (float*)malloc(sizeof(float)*4);
-	myparams->freqs[0]=10;
-	myparams->freqs[1]=37;
-	myparams->freqs[2]=78;
-	myparams->freqs[3]=0;
-	myparams->phases = (float*)malloc(sizeof(float)*4);
+	myparams->freqs = (float*)malloc(sizeof(float)*7);
+	myparams->freqs[0]=2;
+	myparams->freqs[1]=3.7;
+	myparams->freqs[2]=7.8;
+	myparams->freqs[3]=0.12;
+	myparams->freqs[4]=0.54;
+	myparams->freqs[5]=1.3;
+	myparams->freqs[6]=0;
+	myparams->phases = (float*)malloc(sizeof(float)*7);
 	myparams->phases[0]=0;
 	myparams->phases[1]=1;
 	myparams->phases[2]=2;
-	myparams->phases[3]=0;
-	myparams->amps = (float*)malloc(sizeof(float)*4);
+	myparams->phases[3]=3;
+	myparams->phases[4]=5;
+	myparams->phases[5]=1;
+	myparams->phases[6]=0;
+	myparams->amps = (float*)malloc(sizeof(float)*7);
 	myparams->amps[0]=1;
 	myparams->amps[1]=2;
 	myparams->amps[2]=3;
-	myparams->amps[3]=4;
-	myparams->time = 2.f;
+	myparams->amps[3]=0.7;
+	myparams->amps[4]=2.3;
+	myparams->amps[5]=1;
+	myparams->amps[6]=0;
+	myparams->time = 60.f;
 	myparams->sample_rate=SAMPLE_RATE;
 }
 
@@ -177,10 +186,13 @@ void initialize_mlp (struct layer *layers,Onnx__ModelProto *model) {
 	layers[1].prev=&layers[0];
 	layers[1].next=&layers[2];
 	layers[1].weights=(float*)malloc(sizeof(float)*HIDDEN_SIZE*HISTORY_LENGTH);
+
+	Onnx__GraphProto *mygraph = model->graph;
+	Onnx__TensorProto **mytensor = mygraph->initializer;
 	
 	for (int i=0;i<HIDDEN_SIZE*HISTORY_LENGTH;i++) {
 		if (model) {
-			layers[1].weights[i]=*((float *)model->graph.initializer[0]->raw_data+i)
+			layers[1].weights[i]=*((float *)mytensor[0]->raw_data.data+i);
 		} else {
 			layers[1].weights[i]=(float)rand()/RAND_MAX - 0.5f;
 		}
@@ -198,10 +210,13 @@ void initialize_mlp (struct layer *layers,Onnx__ModelProto *model) {
 	layers[2].weights=(float*)malloc(sizeof(float)*HIDDEN_SIZE);
 	for (int i=0;i<HIDDEN_SIZE;i++) {
 		if (model) {
-			layers[2].weights[i]=*((float *)model->graph.initializer[2]->raw_data+i);
+			1;
+			//layers[2].weights[i]=*((float *)model->graph.initializer[2]->raw_data+i);
+			layers[2].weights[i]=*((float *)mytensor[2]->raw_data.data+i);
 		} else {
 			layers[2].weights[i]=(float)rand()/RAND_MAX - 0.5f;
 		}
+	}
 	layers[2].outputs=(float*)malloc(sizeof(float));
 	layers[2].deltas=(float *)malloc(sizeof(float));
 	layers[2].biases=(float *)malloc(sizeof(float));
@@ -239,11 +254,6 @@ void free_signal (SIGNAL mysignal) {
 	free(mysignal->s);
 }
 
-void extract_weights_biases (Onnx__ModelProto *model,float ***weights,float ***biases) {
-	*weights = (float **)malloc(10 * sizeof(float *));
-	
-}
-
 int main (int argc,char **argv) {
 	if (argc != 2) {
 		fprintf(stderr,"usage:\n%s <onnx file>\n",argv[0]);
@@ -269,7 +279,7 @@ int main (int argc,char **argv) {
 	plot(mysignal,"original signal");
 	
 	SIGNAL mysignal_subsampled = (SIGNAL)malloc(sizeof(struct signal));
-	subsample(mysignal,mysignal_subsampled,0.25f);
+	subsample(mysignal,mysignal_subsampled,SUBSAMPLE_RATE);
 	plot(mysignal_subsampled,"original signal subsampled");
 	
 	// set up MLP
@@ -288,18 +298,30 @@ int main (int argc,char **argv) {
 	mysignal_predicted->s = (float *)malloc(mysignal_subsampled->points * sizeof(float));
 
 	// zero-pad on the left side
-	for (int i=0;i<HISTORY_LENGTH+PREDICTION_TIME;i++) {
-		mysignal_predicted->s[i] = 0.f;
-	}
-	for (int i=HISTORY_LENGTH+PREDICTION_TIME;i<mysignal_subsampled->points;i++) {
-		// make prediction based on current weights
-		layers[0].outputs = &mysignal_subsampled->s[i-HISTORY_LENGTH-PREDICTION_TIME];
-		forward_pass(layers);
-		mysignal_predicted->s[i] = layers[2].outputs[0];
+	for (int i=0;i<mysignal_subsampled->points - PREDICTION_TIME;i++) {
+		int start_of_input = i - HISTORY_LENGTH - PREDICTION_TIME;
 
-		// update weights
-		backward_pass(layers,&mysignal_subsampled->s[i]);
-		update_weights(layers,0.01);
+		if (start_of_input >= 0) {
+			// compute outputs
+			layers[0].outputs = &mysignal_subsampled->s[start_of_input];
+			forward_pass(layers);
+
+			// compute deltas
+			backward_pass(layers,&mysignal_subsampled->s[i]);
+			// update weights
+			update_weights(layers,0.01);
+		}
+
+		// make prediction
+		start_of_input = i - HISTORY_LENGTH;
+		if (start_of_input < 0) {
+			mysignal_predicted->s[i] = 0.f;
+		} else {	
+			// make a prediction
+			layers[0].outputs = &mysignal_subsampled->s[i-HISTORY_LENGTH];
+			forward_pass(layers);
+			mysignal_predicted->s[i] = layers[2].outputs[0];
+		}
 	}
 	
 	plot(mysignal_predicted,"predicted signal");	

@@ -54,12 +54,13 @@ else
     end
     bias_output = zeros(1,size(weights_output,1));
     layers(1,end-1).Bias = bias_output';
-end
+    
+    % write ONYX
+    net = assembleNetwork(layers);
+    exportONNXNetwork(net,'network.onnx');
+    net2 = importONNXNetwork('network.onnx','OutputLayerType','regression');
 
-% write ONYX
-net = assembleNetwork(layers);
-exportONNXNetwork(net,'network.onnx');
-net2 = importONNXNetwork('network.onnx','OutputLayerType','regression');
+end
 
 % allocate deltas
 delta_hidden = cell(1,size(neurons,2));

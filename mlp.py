@@ -1,6 +1,5 @@
 #!/usr/bin/python3
 # MLP/ANN script. Intended for use with data from the wavegen script.
-import os
 import sys
 import math
 import json
@@ -9,28 +8,24 @@ import argparse
 from datetime import datetime
 import numpy as np
 import scipy.signal as signal
-import matplotlib.pyplot as plt
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, LSTM, Flatten, Input
+from tensorflow.keras.layers import Dense
 from tensorflow.keras.backend import clear_session
-import matplotlib.pyplot as plt
-import tensorflow as tf     # issue with importing tensorflow on
-                            # tachyon due to its lack of AVX instructions
-                            # NOTE:  must use on higgs for GPU
+import tensorflow as tf
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description='ANN/MLP Model')
-    parser.add_argument('--online', action="store_true", help="Do online training using a single model. (default: False)")
-    parser.add_argument('-e', '--epochs', type=int, default=10, help="Number of epochs to spend training the network. (default: 10)")
-    parser.add_argument('-u', '--units', action="append", default=[], help="Number of units in hidden layer. Providing this argument more than once will add additional hidden layers. (default: 1)")
-    parser.add_argument('-s', '--sampling-window', type=int, default=10, help="Number of samples to slice from the window for each training example. (default: 10)")
-    parser.add_argument('-t', '--training-window', type=int, default=40, help="Number of samples in each training window. (default: 40)")
-    parser.add_argument('-f', '--filename', type=str, help="Filename of JSON waveform data to read in.")
-    parser.add_argument('-p', '--plot', action="store_true", help="Plot using matplotlib. (default: False)")
-    parser.add_argument('-v', '--verbose', action="store_true", help="Show more debugging information. (default: False)")
-    parser.add_argument('--show-rmse-per-window', action="store_true", help="Display RMSE values for each training window. (default: False)")
-    parser.add_argument('--use-gpu', action="store_true", help="Use GPU for accelerating model training. (default: False)")
+    parser.add_argument('--online', action="store_true", help="Do online training using a single model. (default: False)")  # noqa: E501
+    parser.add_argument('-e', '--epochs', type=int, default=10, help="Number of epochs to spend training the network. (default: 10)")  # noqa: E501
+    parser.add_argument('-u', '--units', action="append", default=[], help="Number of units in hidden layer. Providing this argument more than once will add additional hidden layers. (default: 1)")  # noqa: E501
+    parser.add_argument('-s', '--sampling-window', type=int, default=10, help="Number of samples to slice from the window for each training example. (default: 10)")  # noqa: E501
+    parser.add_argument('-t', '--training-window', type=int, default=40, help="Number of samples in each training window. (default: 40)")  # noqa: E501
+    parser.add_argument('-f', '--filename', type=str, help="Filename of JSON waveform data to read in.")  # noqa: E501
+    parser.add_argument('-p', '--plot', action="store_true", help="Plot using matplotlib. (default: False)")  # noqa: E501
+    parser.add_argument('-v', '--verbose', action="store_true", help="Show more debugging information. (default: False)")  # noqa: E501
+    parser.add_argument('--show-rmse-per-window', action="store_true", help="Display RMSE values for each training window. (default: False)")  # noqa: E501
+    parser.add_argument('--use-gpu', action="store_true", help="Use GPU for accelerating model training. (default: False)")  # noqa: E501
 
     return parser.parse_args()
 
@@ -50,11 +45,18 @@ def create_model(units, history_length, want_verbose=0):
     else:
         model.add(Dense(units, input_shape=(history_length,)))
     model.add(Dense(1))
-    model.compile(loss='mean_squared_error', optimizer='adam', verbose=want_verbose)
+    model.compile(loss='mean_squared_error', optimizer='adam', verbose=want_verbose)  # noqa: E501
     return model
 
 
-def train_model(units, x_train, y_train, history_length, model=None, epochs=10, want_gpu=False, want_verbose=0):
+def train_model(units,
+                x_train,
+                y_train,
+                history_length,
+                model=None,
+                epochs=10,
+                want_gpu=False,
+                want_verbose=0):
     # the following line verifies that Tensorflow has detected a target GPU
     # sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
 
@@ -63,8 +65,8 @@ def train_model(units, x_train, y_train, history_length, model=None, epochs=10, 
         if want_gpu:
             with tf.device('/gpu:0'):
                 model = create_model(units, history_length)
-                model.fit(x_train, y_train, epochs=epochs, verbose=want_verbose)
-                #model.reset_states() # Only needed for stateful LSTM.
+                model.fit(x_train, y_train, epochs=epochs, verbose=want_verbose)  # noqa: E501
+                # Reset states for LSTMs here.
         else:
             model = create_model(units, history_length)
             model.fit(x_train, y_train, epochs=epochs, verbose=want_verbose)
@@ -77,13 +79,13 @@ def train_model(units, x_train, y_train, history_length, model=None, epochs=10, 
 
 def main():
     args = parse_args()
-    #downsample_levels, history_lengths, time_shift, training_portion = load_config (args.config)
+    # downsample_levels, history_lengths, time_shift, training_portion = load_config (args.config)  # noqa: E501
 
     # Read contents of file (if provided), else read from stdin.
     data = None
     if args.filename is not None:
         with open(args.filename, "r") as f:
-            data = json.loads(f.read()) 
+            data = json.loads(f.read())
     else:
         text = "".join([line for line in sys.stdin])
         data = json.loads(text)
@@ -109,8 +111,8 @@ def main():
 
     # Online training fun
     for i in range(0, len(x)-prediction_time-training_window, training_window):
-        start_train = i
-        end_train = i + training_window
+        #  start_train = i
+        #  end_train = i + training_window
         x_train = []
         y_train = []
 
@@ -126,12 +128,13 @@ def main():
         y_train = np.array(y_train)
 
         # PREDICTION (Normal)
-        # Prediction across this buffer of samples, using the previous window's model.
+        # Prediction across this buffer of samples, using the previous
+        # window's model.
         if prev_model is not None:
             for i in range(0, training_window):
                 future_x = np.array([x_train[i]])
                 y_pred = prev_model.predict([future_x])
-                #print("Prediction: {}".format(y_pred))
+                # print("Prediction: {}".format(y_pred))
                 y_pred = y_pred.flatten()
                 y_predicted[results_idx:results_idx+len(y_pred)] = y_pred
                 results_idx += len(y_pred)
@@ -141,12 +144,12 @@ def main():
 
         # Train the model + get predictions.
         if args.online and model is not None:
-            model = train_model(units, x_train, y_train, history_length, epochs=epochs, want_gpu=use_gpu, model=model)
+            model = train_model(units, x_train, y_train, history_length, epochs=epochs, want_gpu=use_gpu, model=model, want_verbose=want_verbose)  # noqa: E501
         else:
-            model = train_model(units, x_train, y_train, history_length, epochs=epochs, want_gpu=use_gpu)
+            model = train_model(units, x_train, y_train, history_length, epochs=epochs, want_gpu=use_gpu, want_verbose=want_verbose)  # noqa: E501
         y_pred = model.predict(x_train)
 
-        prev_model = model # Swap in the last window's model.
+        prev_model = model  # Swap in the last window's model.
 
         # Clean up all excess state Keras is keeping around.
         clear_session()
@@ -155,9 +158,9 @@ def main():
     size = len(y_predicted)-(training_window*2)
     diffs = np.ndarray((size,), float)
     for i in range(0, size):
-        diffs[i] = np.square(y_predicted[i+training_window] - x[i+training_window])
+        diffs[i] = np.square(y_predicted[i+training_window] - x[i+training_window])  # noqa: E501
     rmse = math.sqrt(np.mean(diffs))
-    #print("Global RMSE: {}".format(rmse))
+    # print("Global RMSE: {}".format(rmse))
 
     # Print JSON blob for other tools to consume.
     out = {
@@ -181,7 +184,6 @@ def main():
     if args.plot:
         import matplotlib.pyplot as plt  # Intentionally late import.
 
-        #num_plots = 3
         num_plots = 2
         x_data = np.arange(len(x))
 

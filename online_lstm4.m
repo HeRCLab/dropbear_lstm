@@ -35,8 +35,8 @@ alpha = 1;
 
 % synthesize subsampled signal
 % NOTE: this uses striding, not interpolation as in the C-based model!
-x_sub = x(1:subsample:end);
-signal_sub = signal(1:subsample:end);
+sample_period = 1/model_sample_rate;
+[x_sub,signal_sub] = myresample(signal,sample_rate,model_sample_rate);
 
 % reuse network across trainings; otherwise, start from randomized
 % network each training

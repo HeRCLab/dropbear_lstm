@@ -11,6 +11,7 @@
 #define SAMPLE_RATE		5000.f
 #define SUBSAMPLE_RATE		1250.f
 #define PREDICTION_TIME		10
+#define ALPHA			1e-4f
 
 struct params {
 	float sample_rate;
@@ -27,6 +28,7 @@ struct signal {
 	float *s;
 	int points;
 	float sample_rate;
+	char name[1024];
 };
 
 typedef struct signal * SIGNAL;
@@ -63,12 +65,13 @@ void generate_synthetic_data (PARAMS myparams,SIGNAL mysignal) {
 	mysignal->points = points;
 	
 	mysignal->sample_rate = myparams->sample_rate;
+	strcpy(mysignal->name,"synthesized signal");
 }
 
 void forward_pass (struct layer *mlp) {
 	// start with second layer, since the first layer is the input layer and there's
 	// nothing to do there
-	struct layer *current_layer=mlp->next;
+	struct layer *current_layer=mlp;
 
 	while (current_layer=current_layer->next) {
 		// matrix-vector multiply
@@ -81,7 +84,7 @@ void forward_pass (struct layer *mlp) {
 	}
 }
 
-void backward_pass (struct layer *mlp,float *y) {
+void backward_pass (struct layer *mlp,float *y,float alpha) {
 	// skip to last layer
 	struct layer *current_layer=mlp;
 	while (current_layer->next) current_layer=current_layer->next;
@@ -89,6 +92,16 @@ void backward_pass (struct layer *mlp,float *y) {
 	// handle last layer separately
 	for (int i=0;i<current_layer->neurons;i++)
 		current_layer->deltas[i]=current_layer->outputs[i]-y[i];
+
+	// update weights
+	for (int i=0;i<current_layer->prev->neurons;i++)
+		for (int j=0;j<current_layer->neurons;j++)
+			current_layer->weights[i*current_layer->neurons+j] -=
+				alpha * current_layer->deltas[j] * current_layer->prev->outputs[i];
+
+	// update bias
+	for (int i=0;i<current_layer->neurons;i++)
+		current_layer->biases[i] -= alpha * current_layer->deltas[i];
 
 	// move back one layer
 	current_layer=current_layer->prev;
@@ -101,6 +114,17 @@ void backward_pass (struct layer *mlp,float *y) {
 				sum+=current_layer->next->deltas[j]*current_layer->next->weights[j];
 			current_layer->deltas[i]=current_layer->outputs[i]*sum;
 		}
+
+		
+		// update weights
+		for (int i=0;i<current_layer->prev->neurons;i++)
+			for (int j=0;j<current_layer->neurons;j++)
+				current_layer->weights[i*current_layer->neurons+j] -=
+					alpha * current_layer->deltas[j] * current_layer->prev->outputs[i];
+
+		// update bias
+		for (int i=0;i<current_layer->neurons;i++)
+			current_layer->biases[i] -= alpha * current_layer->deltas[i];
 
 		current_layer=current_layer->prev;
 	}
@@ -141,6 +165,8 @@ void subsample (SIGNAL in_signal,SIGNAL out_signal,float subsample_rate) {
 					in_signal->s[position_int+1];
 		out_signal->t[i] = (float)i / out_signal->sample_rate;
 	}
+
+	strcpy(out_signal->name,"subsampled signal");
 }
 
 void initialize_signal_parameters (PARAMS myparams) {
@@ -210,7 +236,6 @@ void initialize_mlp (struct layer *layers,Onnx__ModelProto *model) {
 	layers[2].weights=(float*)malloc(sizeof(float)*HIDDEN_SIZE);
 	for (int i=0;i<HIDDEN_SIZE;i++) {
 		if (model) {
-			1;
 			//layers[2].weights[i]=*((float *)model->graph.initializer[2]->raw_data+i);
 			layers[2].weights[i]=*((float *)mytensor[2]->raw_data.data+i);
 		} else {
@@ -223,17 +248,25 @@ void initialize_mlp (struct layer *layers,Onnx__ModelProto *model) {
 	layers[2].biases[0]=0.f;
 }
 
-void plot (SIGNAL mysignal,char *title) {
+// plot an array of signals, assuming they are all aligneded
+void plot (SIGNAL *mysignal,int num,char *title) {
 	// dump signal
-	char str[4096];
+	char str[4096],str2[4096];
+	
+	str2[0]=0;
+	for (int i=0;i<num;i++) {
+		sprintf(str,"'<cat' using 1:%d title '%s' with lines,",i+2,mysignal[i]->name);
+		strcat(str2,str);
+	}
+	str2[strlen(str2)-1]=0;
 	
 	sprintf(str,"/usr/bin/gnuplot -p -e \""
 			"set title '%s';"
 			"set xlabel 'time (s)';"
 			"set ylabel 'accel';"
-			"set key off;"
-			"plot '<cat' with lines;"
-			"\"",title);
+			"set key on;"
+			"plot %s;"
+			"\"",title,str2);
 			
 	FILE *myplot = popen(str,"w");
 	
@@ -242,8 +275,10 @@ void plot (SIGNAL mysignal,char *title) {
 		exit(1);
 	}
 	
-	for (int i=0;i<mysignal->points;i++) {
-		fprintf (myplot,"%0.4f %0.4f\n",mysignal->t[i],mysignal->s[i]);
+	for (int i=0;i<mysignal[0]->points;i++) {
+		fprintf (myplot,"%0.4f ",mysignal[0]->t[i]);
+		for (int j=0;j<num;j++)	fprintf(myplot,"%0.4f ",mysignal[j]->s[i]);
+		fprintf(myplot,"\n");
 	}
 	
 	fclose(myplot);
@@ -276,11 +311,11 @@ int main (int argc,char **argv) {
 	// synthesize and plot signal
 	SIGNAL mysignal = (SIGNAL)malloc(sizeof(struct signal));
 	generate_synthetic_data (myparams,mysignal);
-	plot(mysignal,"original signal");
+	plot(&mysignal,1,"original signal");
 	
 	SIGNAL mysignal_subsampled = (SIGNAL)malloc(sizeof(struct signal));
 	subsample(mysignal,mysignal_subsampled,SUBSAMPLE_RATE);
-	plot(mysignal_subsampled,"original signal subsampled");
+	plot(&mysignal_subsampled,1,"original signal subsampled");
 	
 	// set up MLP
 	struct layer layers[3];
@@ -288,14 +323,21 @@ int main (int argc,char **argv) {
 
 	// set up predicted signal
 	SIGNAL mysignal_predicted=(SIGNAL)malloc(sizeof(struct signal));
+	// give the signal a name
+	strcpy(mysignal_predicted->name,"predicted signal");
 	// set number of points to that of subsampled signal
 	mysignal_predicted->points = mysignal_subsampled->points;
+	// set sample rate
+	mysignal_predicted->sample_rate = mysignal_subsampled->sample_rate;
 	// allocate time axis
 	mysignal_predicted->t = (float *)malloc(mysignal_subsampled->points * sizeof(float));
 	// copy time axis from subssampled signal
-	memcpy(mysignal_predicted->t,mysignal_subsampled->t,mysignal_subsampled->points);
+	memcpy(mysignal_predicted->t,mysignal_subsampled->t,mysignal_subsampled->points * sizeof(float));
 	// allocate y axis
 	mysignal_predicted->s = (float *)malloc(mysignal_subsampled->points * sizeof(float));
+	// initialize number of points
+	mysignal_predicted->points = 0;
+
 
 	// zero-pad on the left side
 	for (int i=0;i<mysignal_subsampled->points - PREDICTION_TIME;i++) {
@@ -307,9 +349,9 @@ int main (int argc,char **argv) {
 			forward_pass(layers);
 
 			// compute deltas
-			backward_pass(layers,&mysignal_subsampled->s[i]);
+			backward_pass(layers,&mysignal_subsampled->s[i],ALPHA);
 			// update weights
-			update_weights(layers,0.01);
+			//update_weights(layers,ALPHA);
 		}
 
 		// make prediction
@@ -320,11 +362,13 @@ int main (int argc,char **argv) {
 			// make a prediction
 			layers[0].outputs = &mysignal_subsampled->s[i-HISTORY_LENGTH];
 			forward_pass(layers);
-			mysignal_predicted->s[i] = layers[2].outputs[0];
+			mysignal_predicted->s[i+PREDICTION_TIME] = layers[2].outputs[0];
 		}
+		mysignal_predicted->points++;
 	}
 	
-	plot(mysignal_predicted,"predicted signal");	
+	SIGNAL mysignals[2]={mysignal_subsampled,mysignal_predicted};
+	plot(mysignals,2,"predicted signal");	
 
 	// clean up
 	free(mysignal);

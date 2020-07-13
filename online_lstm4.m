@@ -31,7 +31,7 @@ hidden_size = 10;
 model_sample_rate = 1250;
 subsample = floor(sample_rate / model_sample_rate);
 prediction_time = 10;
-alpha = 1;
+alpha = 1e-4;
 
 % synthesize subsampled signal
 % NOTE: this uses striding, not interpolation as in the C-based model!

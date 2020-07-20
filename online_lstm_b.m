@@ -17,6 +17,7 @@ phases=[0, 1, 2, 3, 5, 1];
 
 training_window = numel(signal);
 prediction_time = 1;
+
 rmse=[];
 sample_rates=[];
 
@@ -27,11 +28,15 @@ for downsample = 1 : -.01 : .01
     sample_rates = [sample_rates,model_sample_rate];
     subsample = floor(sample_rate / model_sample_rate);
     network_type = 'mlp';
-    history_length = ceil(.1 * model_sample_rate); % 100 ms
+    history_length = ceil(.01 * model_sample_rate); % 10 ms
 
     % synthesize subsampled signal
     x_sub = x(1:subsample:end);
     signal_sub = signal(1:subsample:end);
+
+    % plot subsampled signal
+    myfig2 = subplot(2,1,1);
+    plot (x_sub,signal_sub);
 
     % allocate predicted signal
     signal_pred = zeros(1,numel(signal_sub));

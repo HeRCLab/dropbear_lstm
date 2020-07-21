@@ -26,7 +26,7 @@ const (
 	SUBSAMPLE       float64 = 0.25
 	PREDICTION_TIME int     = 10
 	CHANSIZE        int     = 256
-	ALPHA           float64 = 0.0001
+	ALPHA           float64 = 0.00001
 	DATASET_SIZE    float64 = 60 // number of seconds to run the model for
 )
 
@@ -96,6 +96,10 @@ func RunRTML(groundtruth, subchan, predchan, biaschan chan wavegen.Sample, sig *
 
 	fmt.Printf("post-training weights for layer 1 %v\n", nn.Layer[1].Weight)
 	fmt.Printf("psot-training biases for layer 1 %v\n", nn.Layer[1].Bias)
+
+	// save out MLPX
+	mlpx := nn.ToMLPX()
+	mlpx.WriteJSON("output.mlpx")
 
 }
 

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+
+	"github.com/herclab/herc-file-formats/mlpx/go/mlpx"
 )
 
 type Layer struct {
@@ -93,6 +95,34 @@ type MLP struct {
 
 	// Learning rate
 	Alpha float64
+}
+
+func (nn *MLP) ToMLPX() *mlpx.MLPX {
+	// TODO: should instantiate the MLPX along with the MLP and allow
+	// snapshotting to it, rather than just saving one snapshot.
+	mlp := &mlpx.MLPX{
+		Schema:    []interface{}{"mlpx", 0},
+		Snapshots: make(map[string]*mlpx.Snapshot),
+	}
+
+	snap := &mlpx.Snapshot{
+		Layers: make(map[string]*mlpx.Layer),
+	}
+	mlp.Snapshots["0"] = snap
+
+	for i, l := range nn.Layer {
+		layer := &mlpx.Layer{
+			Neurons:     l.TotalNeurons(),
+			Weights:     &l.Weight,
+			Outputs:     &l.Output,
+			Activations: &l.Activation,
+			Deltas:      &l.Delta,
+			Biases:      &l.Bias,
+		}
+		snap.Layers[fmt.Sprintf("%d", i)] = layer
+	}
+
+	return mlp
 }
 
 func (nn *MLP) InputLayer() *Layer {

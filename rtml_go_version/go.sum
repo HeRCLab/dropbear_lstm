@@ -113,6 +113,9 @@ github.com/hashicorp/golang-lru v0.5.3/go.mod h1:iADmTwqILo4mZ8BN3D2Q6+9jd8WM5uG
 github.com/hashicorp/golang-lru v0.5.4 h1:YDjusn29QI/Das2iO9M0BHnIbxPeyuCHsjMW+lJfyTc=
 github.com/hashicorp/golang-lru v0.5.4/go.mod h1:iADmTwqILo4mZ8BN3D2Q6+9jd8WM5uGBxy+E8yxSoD4=
 github.com/hashicorp/hcl v1.0.0/go.mod h1:E5yfLk+7swimpb2L/Alb/PJmXilQ/rhwaUYs4T20WEQ=
+github.com/herclab/herc-file-formats v0.0.0-20200721202846-5f0e35dff4fd h1:vSrVP9p52/+ugfHZylUKaae2e7QgK9C9OqE/TD0afbI=
+github.com/herclab/herc-file-formats/mlpx v0.0.0-20200721202846-5f0e35dff4fd h1:sbu49uzhCPyiCelFfNAg2PmJ377l1/IzNHY1JoPmYRY=
+github.com/herclab/herc-file-formats/mlpx v0.0.0-20200721202846-5f0e35dff4fd/go.mod h1:ByGBws2a6vBE6ZFUwIsCoUIZXcVgm4pWVSPMhONCL10=
 github.com/herclab/wavegen v0.0.0-20200619210728-7e521bef55f8 h1:RQu/EKjdS1CqFLLq7kZ0wAZQH1BWcKpBxVmdKDNy+q4=
 github.com/herclab/wavegen v0.0.0-20200619210728-7e521bef55f8/go.mod h1:l8eYUF4/3Tlnv+lCGKsYy6rUzK+LeG4JQntIdLBmeIA=
 github.com/inconshreveable/mousetrap v1.0.0 h1:Z8tu5sraLXCXIcARxBp/8cbvlwVa7Z1NHg9XEKhtSvM=

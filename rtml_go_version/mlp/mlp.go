@@ -35,6 +35,8 @@ type Layer struct {
 
 	ActivationFunction      func(float64) float64
 	DerivActivationFunction func(float64) float64
+
+	mlpxID string
 }
 
 func (l *Layer) TotalNeurons() int {
@@ -95,34 +97,8 @@ type MLP struct {
 
 	// Learning rate
 	Alpha float64
-}
 
-func (nn *MLP) ToMLPX() *mlpx.MLPX {
-	// TODO: should instantiate the MLPX along with the MLP and allow
-	// snapshotting to it, rather than just saving one snapshot.
-	mlp := &mlpx.MLPX{
-		Schema:    []interface{}{"mlpx", 0},
-		Snapshots: make(map[string]*mlpx.Snapshot),
-	}
-
-	snap := &mlpx.Snapshot{
-		Layers: make(map[string]*mlpx.Layer),
-	}
-	mlp.Snapshots["0"] = snap
-
-	for i, l := range nn.Layer {
-		layer := &mlpx.Layer{
-			Neurons:     l.TotalNeurons(),
-			Weights:     &l.Weight,
-			Outputs:     &l.Output,
-			Activations: &l.Activation,
-			Deltas:      &l.Delta,
-			Biases:      &l.Bias,
-		}
-		snap.Layers[fmt.Sprintf("%d", i)] = layer
-	}
-
-	return mlp
+	mlpx *mlpx.MLPX
 }
 
 func (nn *MLP) InputLayer() *Layer {
@@ -137,21 +113,52 @@ func NewMLP(alpha float64, g, gprime func(float64) float64, layerSizes ...int) *
 	nn := &MLP{
 		Layer: make([]*Layer, len(layerSizes)),
 		Alpha: alpha,
+		mlpx:  mlpx.MakeMLPX(),
 	}
+
+	snapid := nn.mlpx.NextSnapshotID()
+	nn.mlpx.MustMakeSnapshot(snapid, alpha)
 
 	// generate the layers and their links back to the previous layers
 	for i, v := range layerSizes {
 		if i == 0 {
 			nn.Layer[i] = NewLayer(v, nil, nil, g, gprime)
+			nn.Layer[i].mlpxID = "input"
+			nn.mlpx.Snapshots[snapid].MustMakeLayer(
+				"input",                // ID
+				v,                      // neurons
+				"",                     // pred
+				fmt.Sprintf("%d", i+1)) // succ
 		} else if i == len(layerSizes)-1 {
 			// the output layer doesn't share our activation
 			// function, since we want it to have full freedom of
 			// range.
 			nn.Layer[i] = NewLayer(v, nn.Layer[i-1], nil, Identity, Unit)
-		} else {
-			nn.Layer[i] = NewLayer(v, nn.Layer[i-1], nil, g, gprime)
-		}
+			nn.Layer[i].mlpxID = "output"
 
+			nn.mlpx.Snapshots[snapid].MustMakeLayer(
+				"output",               // ID
+				v,                      // neurons
+				fmt.Sprintf("%d", i-1), // pred
+				"")                     // succ
+		} else {
+			pred := fmt.Sprintf("%d", i-1)
+			succ := fmt.Sprintf("%d", i+1)
+			if i-1 == 0 {
+				pred = "input"
+			}
+			if i+1 == len(layerSizes)-1 {
+				succ = "output"
+			}
+
+			nn.Layer[i] = NewLayer(v, nn.Layer[i-1], nil, g, gprime)
+			nn.Layer[i].mlpxID = fmt.Sprintf("%d", i)
+			nn.mlpx.Snapshots[snapid].MustMakeLayer(
+				fmt.Sprintf("%d", i), // ID
+				v,                    // neurons
+				pred,                 // pred
+				succ)                 // succ
+		}
 	}
 
 	// generate links to next layers
@@ -162,7 +169,60 @@ func NewMLP(alpha float64, g, gprime func(float64) float64, layerSizes ...int) *
 	}
 
 	return nn
+}
 
+// Snapshot takes a new snapshot using the embedded mlpx object
+func (nn *MLP) Snapshot() error {
+
+	// determine the pervious snapshot, we'll make ourself isomorphic to it
+	snapids := nn.mlpx.SortedSnapshotIDs()
+	prev := snapids[len(snapids)-1]
+
+	// create the snapshot
+	snapid := nn.mlpx.NextSnapshotID()
+	err := nn.mlpx.MakeIsomorphicSnapshot(snapid, prev)
+	if err != nil {
+		return err
+	}
+	snapshot := nn.mlpx.Snapshots[snapid]
+
+	for i, l := range nn.Layer {
+		layer, ok := snapshot.Layers[l.mlpxID]
+		if !ok {
+			return fmt.Errorf("Layer %d mlpxID '%s' does not map to layer in attached MLPX", i, l.mlpxID)
+		}
+
+		layer.Neurons = l.TotalNeurons()
+
+		// note we make deep copies, so they won't later change from
+		// under us
+
+		weights := make([]float64, len(l.Weight))
+		copy(weights, l.Weight)
+		layer.Weights = &weights
+
+		outputs := make([]float64, len(l.Output))
+		copy(weights, l.Output)
+		layer.Outputs = &outputs
+
+		activations := make([]float64, len(l.Activation))
+		copy(activations, l.Activation)
+		layer.Activations = &activations
+
+		deltas := make([]float64, len(l.Delta))
+		copy(deltas, l.Delta)
+		layer.Deltas = &deltas
+
+		biases := make([]float64, len(l.Bias))
+		copy(biases, l.Bias)
+		layer.Biases = &biases
+	}
+
+	return nil
+}
+
+func (nn *MLP) SaveSnapshot(path string) error {
+	return nn.mlpx.WriteJSON(path)
 }
 
 func Sigmoid(x float64) float64 {

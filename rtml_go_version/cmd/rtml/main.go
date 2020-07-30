@@ -29,7 +29,7 @@ type RTMLResult struct {
 	NN          *mlp.MLP
 }
 
-func RunRTML(nn *mlp.MLP, sig *wavegen.Signal) RTMLResult {
+func RunRTML(nn *mlp.MLP, sig *wavegen.Signal, saveevery int) RTMLResult {
 
 	res := RTMLResult{
 		GroundTruth: make([]wavegen.Sample, 0),
@@ -56,7 +56,7 @@ func RunRTML(nn *mlp.MLP, sig *wavegen.Signal) RTMLResult {
 
 	for i := 2*parameters.HISTORY_LENGTH + 2*parameters.PREDICTION_TIME + 2; i < len(sig.T); i++ {
 
-		if i%10 == 0 {
+		if i%saveevery == 0 {
 			nn.Snapshot()
 		}
 
@@ -109,6 +109,11 @@ func main() {
 
 	saveplot := parser.String("p", "saveplot", &argparse.Options{Help: "Save results plot in this file."})
 
+	saveevery := parser.Int("e", "saveevery", &argparse.Options{
+		Help:    "Save an MLPX snapshot every saveevery iterations",
+		Default: 10,
+	})
+
 	if err := parser.Parse(os.Args); err != nil {
 		fmt.Print(parser.Usage(err))
 		panic("Error parsing arguments")
@@ -130,7 +135,7 @@ func main() {
 		panic(err)
 	}
 
-	res := RunRTML(nn, wf.Signal)
+	res := RunRTML(nn, wf.Signal, *saveevery)
 
 	if *savemlpx != "" {
 		res.NN.SaveSnapshot(*savemlpx)

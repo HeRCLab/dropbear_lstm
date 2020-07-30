@@ -36,7 +36,8 @@ type Layer struct {
 	ActivationFunction      func(float64) float64
 	DerivActivationFunction func(float64) float64
 
-	mlpxID string
+	mlpxActivationString string
+	mlpxID               string
 }
 
 func (l *Layer) TotalNeurons() int {
@@ -99,6 +100,72 @@ type MLP struct {
 	Alpha float64
 
 	mlpx *mlpx.MLPX
+}
+
+// Returns appropriate functions based on an MLP activation string
+func resolveMLPXActivation(a string) (func(float64) float64, func(float64) float64) {
+	if a == "relu" {
+		return ReLU, ReLUDeriv
+	}
+
+	if a == "sigmoid" {
+		return Sigmoid, SigmoidDeriv
+	}
+
+	return Identity, Unit
+}
+
+// NewMLPFromMLPX instantiates a new MLP object from a given MLPX. The MLP
+// will be isomorphic to the MLPX. This routine does not initialize the
+// MLPX values at all.
+//
+// The value of Alpha is taken from the MLPX initialize snapshot.
+//
+// Also note that this does not attach the specified MLPX object to the created
+// MLP, instead a new MLP is created.
+func NewMLPFromMLPX(m *mlpx.MLPX) (*MLP, error) {
+	err := m.Validate()
+	if err != nil {
+		return nil, err
+	}
+
+	// because we validated, we can pick any snapshot to extract the
+	// topology
+	layerSizes := make([]int, 0)
+	gs := make([]func(float64) float64, 0)
+	gprimes := make([]func(float64) float64, 0)
+	snap, err := m.Initializer()
+	if err != nil {
+		return nil, err
+	}
+
+	// extract all the layer sizes and activation functions
+	for _, layerID := range snap.SortedLayerIDs() {
+		layer := snap.Layers[layerID]
+		g, gp := resolveMLPXActivation(layer.ActivationFunction)
+
+		layerSizes = append(layerSizes, layer.Neurons)
+		gs = append(gs, g)
+		gprimes = append(gprimes, gp)
+	}
+
+	if len(layerSizes) == 0 {
+		return nil, fmt.Errorf("No layers in MLPX")
+	}
+
+	// note that we will overwrite g and gprime shortly
+	nn := NewMLP(snap.Alpha, gs[0], gprimes[0], layerSizes...)
+
+	// insert the activation functions
+	for i, layerID := range snap.SortedLayerIDs() {
+		layer := snap.Layers[layerID]
+
+		nn.Layer[i].ActivationFunction = gs[i]
+		nn.Layer[i].DerivActivationFunction = gprimes[i]
+		nn.Layer[i].mlpxActivationString = layer.ActivationFunction
+	}
+
+	return nn, nil
 }
 
 func (nn *MLP) InputLayer() *Layer {

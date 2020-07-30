@@ -29,6 +29,8 @@ github.com/herclab/herc-file-formats/mlpx v0.0.0-20200724203604-3b37f228ef96 h1:
 github.com/herclab/herc-file-formats/mlpx v0.0.0-20200724203604-3b37f228ef96/go.mod h1:+PCiNyu+11L6UuDy6QzaMOxHO5y24j1vnLAn3M+T4bo=
 github.com/herclab/herc-file-formats/mlpx v0.0.0-20200727195326-24bd15dd60c0 h1:Fu6j3t0I6WqfAb7McAjZ9AU9i5YEHe1HSEhGmXTBst0=
 github.com/herclab/herc-file-formats/mlpx v0.0.0-20200727195326-24bd15dd60c0/go.mod h1:+PCiNyu+11L6UuDy6QzaMOxHO5y24j1vnLAn3M+T4bo=
+github.com/herclab/herc-file-formats/mlpx v0.0.0-20200729190700-4a3fb9ad14db h1:ijjVUDOHEOBw0i1NsETiNC5Dekq3oupoO3g3Ysws7HU=
+github.com/herclab/herc-file-formats/mlpx v0.0.0-20200729190700-4a3fb9ad14db/go.mod h1:+PCiNyu+11L6UuDy6QzaMOxHO5y24j1vnLAn3M+T4bo=
 github.com/herclab/herc-file-formats/mlpx/go v0.0.0-20200723170906-c48611127a9a h1:E7rVWLl+/4QsXRcJ8TpW3lBFz2WsWeJ38BUarOosQus=
 github.com/herclab/herc-file-formats/mlpx/go v0.0.0-20200723170906-c48611127a9a/go.mod h1:5/sJ53bYaCJpQtsqLw6WjfwRkHMTuSxNMcjpG3cIp1I=
 github.com/herclab/wavegen v0.0.0-20200619210728-7e521bef55f8 h1:RQu/EKjdS1CqFLLq7kZ0wAZQH1BWcKpBxVmdKDNy+q4=

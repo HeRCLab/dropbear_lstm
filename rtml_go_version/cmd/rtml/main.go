@@ -7,6 +7,8 @@ import (
 	"github.com/herclab/dropbear_lstm/rtml_go_version/mlp"
 	"github.com/herclab/dropbear_lstm/rtml_go_version/mlp/parameters"
 
+	"github.com/herclab/herc-file-formats/mlpx/go/mlpx"
+
 	"github.com/akamensky/argparse"
 
 	"math"
@@ -27,7 +29,7 @@ type RTMLResult struct {
 	NN          *mlp.MLP
 }
 
-func RunRTML(sig *wavegen.Signal) RTMLResult {
+func RunRTML(nn *mlp.MLP, sig *wavegen.Signal) RTMLResult {
 
 	res := RTMLResult{
 		GroundTruth: make([]wavegen.Sample, 0),
@@ -47,7 +49,7 @@ func RunRTML(sig *wavegen.Signal) RTMLResult {
 	}
 
 	// nn := mlp.NewMLP(parameters.ALPHA, mlp.ReLU, mlp.ReLUDeriv, parameters.HISTORY_LENGTH, parameters.HIDDEN_SIZE, 1)
-	nn := mlp.NewMLP(parameters.ALPHA, mlp.Identity, mlp.Unit, parameters.HISTORY_LENGTH, parameters.HIDDEN_SIZE, 1)
+	// nn := mlp.NewMLP(parameters.ALPHA, mlp.Identity, mlp.Unit, parameters.HISTORY_LENGTH, parameters.HIDDEN_SIZE, 1)
 	fmt.Printf("pre-training weights for layer 1 %v\n", nn.Layer[1].Weight)
 	fmt.Printf("pre-training biases for layer 1 %v\n", nn.Layer[1].Bias)
 	res.NN = nn
@@ -101,6 +103,8 @@ func main() {
 
 	inputfile := parser.String("i", "input", &argparse.Options{Required: true, Help: "Input Wavegen file."})
 
+	loadmlpx := parser.String("l", "loadmlpx", &argparse.Options{Required: true, Help: "Use the specified MLPX file to initialize the network. The initializer snapshot is used to restore weights and biases (other values are ignored)."})
+
 	savemlpx := parser.String("m", "savemlpx", &argparse.Options{Help: "Save snapshots in MLPX format to this file."})
 
 	saveplot := parser.String("p", "saveplot", &argparse.Options{Help: "Save results plot in this file."})
@@ -110,12 +114,23 @@ func main() {
 		panic("Error parsing arguments")
 	}
 
+	m, err := mlpx.ReadJSON(*loadmlpx)
+	if err != nil {
+		panic(err)
+	}
+
+	nn, err := mlp.NewMLPFromMLPX(m)
+
+	if err != nil {
+		panic(err)
+	}
+
 	wf, err := wavegen.ReadJSON(*inputfile)
 	if err != nil {
 		panic(err)
 	}
 
-	res := RunRTML(wf.Signal)
+	res := RunRTML(nn, wf.Signal)
 
 	if *savemlpx != "" {
 		res.NN.SaveSnapshot(*savemlpx)

@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
+#include <mlpx.h>
 
 #define	HISTORY_LENGTH	10
 #define HIDDEN_SIZE		10
@@ -40,6 +41,110 @@ struct layer {
 	struct layer *next;
 };
 
+struct mlp {
+	int n_layers;
+	struct layer* layers;
+	float alpha;
+	int mlpxhandle;
+};
+
+// Use if a fatal error has occurred relating to MLPX, this will print the
+// error to standard error, and then exit nonzero.
+#define mlpx_fatal() do { fprintf(stderr, "MLPX Error: %s\n", MLPXGetError()); exit(1); } while(0)
+
+// Execute the given statement. If it returns a nonzero value, assume a fatal
+// MLPX error has occurred.
+#define mlpx_must(_stmt) do { if ( (_stmt) != 0) { mlpx_fatal(); } } while(0)
+
+// load the specified MLPX file, or return nil if an error occurred
+//
+// howinit can be one of several values:
+//
+// 0 -- all initial values available in the MLPX are copied, and any remaining
+// values are initialized to 0.
+//
+// 1 -- initial weight and bias values in the MLPX are copied, and any
+// remaining values are initialized to 0.
+//
+// NOTE: we don't support directly initializing to random values, since `mlpx
+// new` can already do this for us anyway.
+struct mlp* load_mlpx(char* path, int howinit) {
+	int handle;
+	struct mlp* m;
+
+	m = malloc(sizeof(struct mlp));
+	if (m == NULL) {
+		fprintf(stderr, "could not allocate memory!\n");
+		exit(1);
+	}
+
+	// obtain a handle on the MLPX object
+	mlpx_must(MLPXOpen(path, &handle));
+
+	// Get layer count -- snapshot index 0 refers to the snapshot with
+	// the earliest position in canonical sort order, which should be
+	// the initializer. If there are no snapshots, this will error.
+	mlpx_must(MLPXSnapshotGetNumLayers(handle, 0, &(m->n_layers)));
+
+	// allocate space for said layers
+	m->layers = malloc(sizeof(struct layer) * m->n_layers);
+	if (m->layers == NULL) {
+		fprintf(stderr, "could not allocate memory!\n");
+		exit(1);
+	}
+
+	// the "weights" for the input layer are nonsense away, but it makes it
+	// easier to interop with MLPX, which assume there are neurons many of
+	// them (MLPX also knows they are nonsense, but puts *something* there
+	// for convenience).
+	int lastlayersize = 1;
+
+	for (int layerindex = 0 ; layerindex < m->n_layers ; layerindex++ ) {
+		int neurons, nweights, nbiases;
+
+		m->layers[layerindex].isinput = (layerindex == 0);
+
+		mlpx_must(MLPXLayerGetNeurons(handle, 0, layerindex, &neurons));
+		m->layers[layerindex].neurons = neurons;
+
+		// NOTE: we assume the MLPX has weight and bias values and
+		// always load from those. This code is intentionally designed
+		// so it will error out if those arrays are missing.
+
+		// read in weights from MLPX
+		nweights = lastlayersize * neurons;
+		m->layers->weights = malloc(sizeof(float) * nweights);
+		if (m->layers->weights == NULL) {
+			fprintf(stderr, "could not allocate memory!\n");
+			exit(1);
+		}
+		for (int weightindex = 0 ; weightindex < nweights ; weightindex++) {
+			double weight;
+			mlpx_must(MLPXLayerGetWeight(handle, 0, layerindex, weightindex, &weight));
+			m->layers->weights[weightindex] = (float) weight;
+		}
+
+		// read in biases from MLPX
+		m->layers->biases = malloc(sizeof(float) * nbiases);
+		if (m->layers->biases == NULL) {
+			fprintf(stderr, "could not allocate memory!\n");
+			exit(1);
+		}
+		for (int biasindex = 0 ; biasindex < nbiases ; biasindex++) {
+			double bias;
+			mlpx_must(MLPXLayerGetBias(handle, 0, layerindex, biasindex, &bias));
+			m->layers->biases[biasindex] = (float) bias;
+		}
+
+		lastlayersize = neurons;
+
+	}
+
+	// Release the handle on the original MLPX we used to retrieve our
+	// topology
+	mlpx_must(MLPXClose(handle));
+}
+
 void generate_synthetic_data (PARAMS myparams,SIGNAL mysignal) {
 	// generate baseline time array
 	int points = (int)ceilf(myparams->sample_rate * myparams->time);
@@ -63,6 +168,8 @@ void generate_synthetic_data (PARAMS myparams,SIGNAL mysignal) {
 	mysignal->sample_rate = myparams->sample_rate;
 }
 
+// disabled because of symbol collision
+#if 0
 void forward_pass (struct layer *mlp) {
 	// start with second layer, since the first layer is the input layer and there's
 	// nothing to do there
@@ -78,6 +185,7 @@ void forward_pass (struct layer *mlp) {
 		}
 	}
 }
+#endif
 
 void backward_pass (struct layer *mlp,float *y) {
 	// skip to last layer
@@ -220,6 +328,9 @@ void free_signal (SIGNAL mysignal) {
 }
 
 int main () {
+	load_mlpx("input.mlpx", 0);
+	return;
+
 	// set up signal
 	PARAMS myparams = (PARAMS)malloc(sizeof(struct params));
 	initialize_signal_parameters(myparams);

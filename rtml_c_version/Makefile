@@ -1,6 +1,6 @@
 CC = gcc
-C_OPTS =
-LINK_OPTS = -lm
+C_OPTS = $(shell mlpx-config --cflags)
+LINK_OPTS = -lm $(shell mlpx-config --libs)
 sources = $(wildcard *.c)
 objects = $(patsubst %.c,%.o,$(sources))
 

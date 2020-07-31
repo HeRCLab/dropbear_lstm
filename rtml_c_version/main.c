@@ -33,6 +33,7 @@ typedef struct signal * SIGNAL;
 struct layer {
 	int isinput;
 	int neurons;
+	int weightc;
 	float *weights;
 	float *biases;
 	float *outputs;
@@ -42,7 +43,7 @@ struct layer {
 };
 
 struct mlp {
-	int n_layers;
+	int layerc;
 	struct layer* layers;
 	float alpha;
 	int mlpxhandle;
@@ -50,7 +51,7 @@ struct mlp {
 
 // Use if a fatal error has occurred relating to MLPX, this will print the
 // error to standard error, and then exit nonzero.
-#define mlpx_fatal() do { fprintf(stderr, "MLPX Error: %s\n", MLPXGetError()); exit(1); } while(0)
+#define mlpx_fatal() do { fprintf(stderr, "%s:%d:%s(): MLPX Error: %s\n", __FILE__, __LINE__, __func__, MLPXGetError()); exit(1); } while(0)
 
 // Execute the given statement. If it returns a nonzero value, assume a fatal
 // MLPX error has occurred.
@@ -60,17 +61,25 @@ struct mlp {
 //
 // howinit can be one of several values:
 //
-// 0 -- all initial values available in the MLPX are copied, and any remaining
-// values are initialized to 0.
-//
-// 1 -- initial weight and bias values in the MLPX are copied, and any
+// 0 -- initial weight and bias values in the MLPX are copied, and any
 // remaining values are initialized to 0.
+//
+// 1 -- all initial values available in the MLPX are copied, and any remaining
+// values are initialized to 0.
 //
 // NOTE: we don't support directly initializing to random values, since `mlpx
 // new` can already do this for us anyway.
+//
+// NOTE: the value of alpha for the initialize snapshot is used as the MLP's
+// alpha value.
+//
+// NOTE: because the C implementation does not track activations and outputs
+// separately, the outputs field is ignored and the activations field is used
+// as intended.
 struct mlp* load_mlpx(char* path, int howinit) {
 	int handle;
 	struct mlp* m;
+	double alpha;
 
 	m = malloc(sizeof(struct mlp));
 	if (m == NULL) {
@@ -84,14 +93,21 @@ struct mlp* load_mlpx(char* path, int howinit) {
 	// Get layer count -- snapshot index 0 refers to the snapshot with
 	// the earliest position in canonical sort order, which should be
 	// the initializer. If there are no snapshots, this will error.
-	mlpx_must(MLPXSnapshotGetNumLayers(handle, 0, &(m->n_layers)));
+	mlpx_must(MLPXSnapshotGetNumLayers(handle, 0, &(m->layerc)));
 
 	// allocate space for said layers
-	m->layers = malloc(sizeof(struct layer) * m->n_layers);
+	m->layers = malloc(sizeof(struct layer) * m->layerc);
 	if (m->layers == NULL) {
 		fprintf(stderr, "could not allocate memory!\n");
 		exit(1);
 	}
+
+	// Create a duplicate of the source MLPX which will be topologically
+	// identical. We will set it's initializer layers to have the same
+	// values as those of the input MLPX.
+	mlpx_must(MLPXIsomorphicDuplicate(handle, &(m->mlpxhandle), "initializer"));
+	mlpx_must(MLPXSnapshotGetAlpha(handle, 0, &alpha));
+	mlpx_must(MLPXSnapshotSetAlpha(m->mlpxhandle, 0, alpha));
 
 	// the "weights" for the input layer are nonsense away, but it makes it
 	// easier to interop with MLPX, which assume there are neurons many of
@@ -99,13 +115,16 @@ struct mlp* load_mlpx(char* path, int howinit) {
 	// for convenience).
 	int lastlayersize = 1;
 
-	for (int layerindex = 0 ; layerindex < m->n_layers ; layerindex++ ) {
-		int neurons, nweights, nbiases;
+	for (int layerindex = 0 ; layerindex < m->layerc ; layerindex++ ) {
+		int neurons, nweights, nbiases, noutputs, ndeltas;
+		struct layer* layer;
 
-		m->layers[layerindex].isinput = (layerindex == 0);
+		layer = &(m->layers[layerindex]);
+
+		layer->isinput = (layerindex == 0);
 
 		mlpx_must(MLPXLayerGetNeurons(handle, 0, layerindex, &neurons));
-		m->layers[layerindex].neurons = neurons;
+		layer->neurons = neurons;
 
 		// NOTE: we assume the MLPX has weight and bias values and
 		// always load from those. This code is intentionally designed
@@ -113,43 +132,122 @@ struct mlp* load_mlpx(char* path, int howinit) {
 
 		// read in weights from MLPX
 		nweights = lastlayersize * neurons;
-		m->layers->weights = malloc(sizeof(float) * nweights);
-		if (m->layers->weights == NULL) {
+		layer->weightc = nweights;
+		layer->weights = malloc(sizeof(float) * nweights);
+		if (layer->weights == NULL) {
 			fprintf(stderr, "could not allocate memory!\n");
 			exit(1);
 		}
 		for (int weightindex = 0 ; weightindex < nweights ; weightindex++) {
 			double weight;
 			mlpx_must(MLPXLayerGetWeight(handle, 0, layerindex, weightindex, &weight));
-			m->layers->weights[weightindex] = (float) weight;
+			layer->weights[weightindex] = (float) weight;
+			mlpx_must(MLPXLayerSetWeight(m->mlpxhandle, 0, layerindex, weightindex, weight));
 		}
 
 		// read in biases from MLPX
-		m->layers->biases = malloc(sizeof(float) * nbiases);
-		if (m->layers->biases == NULL) {
+		nbiases = neurons;
+		layer->biases = malloc(sizeof(float) * nbiases);
+		if (layer->biases == NULL) {
 			fprintf(stderr, "could not allocate memory!\n");
 			exit(1);
 		}
 		for (int biasindex = 0 ; biasindex < nbiases ; biasindex++) {
 			double bias;
 			mlpx_must(MLPXLayerGetBias(handle, 0, layerindex, biasindex, &bias));
-			m->layers->biases[biasindex] = (float) bias;
+			layer->biases[biasindex] = (float) bias;
+			mlpx_must(MLPXLayerSetBias(m->mlpxhandle, 0, layerindex, biasindex, bias));
+		}
+
+		// initialize outputs
+		noutputs = neurons;
+		layer->outputs = malloc(sizeof(float) * noutputs);
+		if (layer->outputs == NULL) {
+			fprintf(stderr, "could not allocate memory!\n");
+			exit(1);
+		}
+		for (int outputindex = 0 ; outputindex < noutputs ; outputindex++) {
+			double output;
+			if (howinit == 1) {
+				mlpx_must(MLPXLayerGetActivation(handle, 0, layerindex, outputindex, &output));
+			} else {
+				output = 0;
+			}
+
+			layer->outputs[outputindex] = (float) output;
+			mlpx_must(MLPXLayerSetActivation(m->mlpxhandle, 0, layerindex, outputindex, output));
+		}
+
+		// initialize deltas
+		ndeltas = neurons;
+		layer->deltas = malloc(sizeof(float) * ndeltas);
+		if (layer->deltas == NULL) {
+			fprintf(stderr, "could not allocate memory!\n");
+			exit(1);
+		}
+		for (int deltaindex = 0 ; deltaindex < ndeltas ; deltaindex++) {
+			double delta;
+			if (howinit == 1) {
+				mlpx_must(MLPXLayerGetDelta(handle, 0, layerindex, deltaindex, &delta));
+			} else {
+				delta = 0;
+			}
+
+			layer->deltas[deltaindex] = (float) delta;
+			mlpx_must(MLPXLayerSetDelta(m->mlpxhandle, 0, layerindex, deltaindex, delta));
 		}
 
 		lastlayersize = neurons;
-
 	}
+
 
 	// Release the handle on the original MLPX we used to retrieve our
 	// topology
 	mlpx_must(MLPXClose(handle));
+
+	return m;
+}
+
+// Create a new MLPX snapshot representing the current state of the MLP.
+void take_mlpx_snapshot(struct mlp* m) {
+	char* nextid;
+	int snapc;
+
+	// create the new snapshot
+	mlpx_must(MLPXNextSnapshotID(m->mlpxhandle, &nextid));
+	mlpx_must(MLPXGetNumSnapshots(m->mlpxhandle, &snapc));
+	mlpx_must(MLPXMakeIsomorphicSnapshot(m->mlpxhandle, nextid, snapc-1));
+	free(nextid);
+	// new snapshot now has index snapc
+
+	for (int layerindex = 0 ; layerindex < m->layerc ; layerindex ++ ) {
+		struct layer* layer = &(m->layers[layerindex]);
+
+		char* layerid;
+		mlpx_must(MLPXLayerGetIDByIndex(m->mlpxhandle, snapc, layerindex, &layerid));
+
+		for (int i = 0 ; i < layer->weightc ; i++) {
+			mlpx_must(MLPXLayerSetWeight(m->mlpxhandle, snapc, layerindex, i, layer->weights[i]));
+		}
+
+		for (int i = 0 ; i < layer->neurons ; i++) {
+			mlpx_must(MLPXLayerSetDelta(m->mlpxhandle, snapc, layerindex, i, layer->deltas[i]));
+			mlpx_must(MLPXLayerSetBias(m->mlpxhandle, snapc, layerindex, i, layer->biases[i]));
+			mlpx_must(MLPXLayerSetActivation(m->mlpxhandle, snapc, layerindex, i, layer->outputs[i]));
+		}
+	}
+}
+
+// Save out the current MLPX object to disk
+void save_mlpx(struct mlp* m, char* path) {
+	mlpx_must(MLPXSave(m->mlpxhandle, path));
 }
 
 void generate_synthetic_data (PARAMS myparams,SIGNAL mysignal) {
 	// generate baseline time array
 	int points = (int)ceilf(myparams->sample_rate * myparams->time);
 	float sample_period = 1.f / myparams->sample_rate;
-	
+
 	// allocate time and signal arrays
 	mysignal->s = (float *)malloc(sizeof(float) * points);
 	mysignal->t = (float *)malloc(sizeof(float) * points);
@@ -164,7 +262,7 @@ void generate_synthetic_data (PARAMS myparams,SIGNAL mysignal) {
 	}
 
 	mysignal->points = points;
-	
+
 	mysignal->sample_rate = myparams->sample_rate;
 }
 
@@ -211,7 +309,7 @@ void backward_pass (struct layer *mlp,float *y) {
 
 void update_weights (struct layer *mlp,float alpha) {
 	struct layer *current_layer = mlp->next;
-	
+
 	while (current_layer) {
 		for (int i=0;i<current_layer->neurons;i++) {
 			float sum=0.f;
@@ -228,12 +326,12 @@ void update_weights (struct layer *mlp,float alpha) {
 void subsample (SIGNAL in_signal,SIGNAL out_signal,float subsample_rate) {
 	int len = in_signal->points;
 	int len_new = out_signal->points = ceil(len / subsample_rate);
-	
+
 	out_signal->sample_rate = in_signal->sample_rate/subsample_rate;
 	// allocate time and signal arrays
 	out_signal->s = (float *)malloc(sizeof(float) * len_new);
 	out_signal->t = (float *)malloc(sizeof(float) * len_new);
-	
+
 	for (int i=0;i<len_new;i++) {
 		float position = (float)i * subsample_rate;
 		float position_frac = position - floorf(position);
@@ -278,7 +376,7 @@ void initialize_mlp (struct layer *layers) {
 	layers[1].prev=&layers[0];
 	layers[1].next=&layers[2];
 	layers[1].weights=(float*)malloc(sizeof(float)*HIDDEN_SIZE*HISTORY_LENGTH);
-	
+
 	for (int i=0;i<HIDDEN_SIZE*HISTORY_LENGTH;i++) layers[1].weights[i]=(float)rand()/RAND_MAX;
 	layers[1].biases=(float*)malloc(sizeof(float)*HIDDEN_SIZE);
 	for (int i=0;i<HIDDEN_SIZE;i++) layers[1].biases[i]=0.f;
@@ -299,7 +397,7 @@ void initialize_mlp (struct layer *layers) {
 void plot (SIGNAL mysignal,char *title) {
 	// dump signal
 	char str[4096];
-	
+
 	sprintf(str,"/usr/bin/gnuplot -p -e \""
 			"set title '%s';"
 			"set xlabel 'time (s)';"
@@ -307,18 +405,18 @@ void plot (SIGNAL mysignal,char *title) {
 			"set key off;"
 			"plot '<cat' with lines;"
 			"\"",title);
-			
+
 	FILE *myplot = popen(str,"w");
-	
+
 	if (!myplot) {
 		perror("Error opening gnuplot");
 		exit(1);
 	}
-	
+
 	for (int i=0;i<mysignal->points;i++) {
 		fprintf (myplot,"%0.4f %0.4f\n",mysignal->t[i],mysignal->s[i]);
 	}
-	
+
 	fclose(myplot);
 }
 
@@ -328,22 +426,30 @@ void free_signal (SIGNAL mysignal) {
 }
 
 int main () {
-	load_mlpx("input.mlpx", 0);
+	struct mlp* m;
+
+	m = load_mlpx("input.mlpx", 0);
+	save_mlpx(m, "temp1.mlpx");
+
+	take_mlpx_snapshot(m);
+
+	save_mlpx(m, "saved.mlpx");
+
 	return;
 
 	// set up signal
 	PARAMS myparams = (PARAMS)malloc(sizeof(struct params));
 	initialize_signal_parameters(myparams);
-	
+
 	// synthesize and plot signal
 	SIGNAL mysignal = (SIGNAL)malloc(sizeof(struct signal));
 	generate_synthetic_data (myparams,mysignal);
 	plot(mysignal,"original signal");
-	
+
 	SIGNAL mysignal_subsampled = (SIGNAL)malloc(sizeof(struct signal));
 	subsample(mysignal,mysignal_subsampled,0.25f);
 	plot(mysignal_subsampled,"original signal subsampled");
-	
+
 	// set up MLP
 	struct layer layers[3];
 	initialize_mlp(layers);
@@ -373,8 +479,8 @@ int main () {
 		backward_pass(layers,&mysignal_subsampled->s[i]);
 		update_weights(layers,0.01);
 	}
-	
-	plot(mysignal_predicted,"predicted signal");	
+
+	plot(mysignal_predicted,"predicted signal");
 
 	// clean up
 	free(mysignal);
@@ -382,7 +488,7 @@ int main () {
 	free(myparams->freqs);
 	free(myparams->phases);
 	free(myparams);
-	
+
 	return 0;
 }
 

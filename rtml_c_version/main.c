@@ -3,6 +3,7 @@
 #include <math.h>
 #include <string.h>
 #include <mlpx.h>
+#include <argp.h>
 
 #define	HISTORY_LENGTH	10
 #define HIDDEN_SIZE		10
@@ -200,6 +201,15 @@ struct mlp* load_mlpx(char* path, int howinit) {
 		lastlayersize = neurons;
 	}
 
+	// Now we establish the links between the layers...
+	for (int layerindex = 0 ; layerindex < m->layerc ; layerindex++ ) {
+		struct layer* layer;
+		layer = &(m->layers[layerindex]);
+
+		layer->prev = (layerindex == 0            ) ? NULL : &(m->layers[layerindex-1]);
+		layer->next = (layerindex == (m->layerc-1)) ? NULL : &(m->layers[layerindex+1]);
+	}
+
 
 	// Release the handle on the original MLPX we used to retrieve our
 	// topology
@@ -285,10 +295,9 @@ void forward_pass (struct layer *mlp) {
 }
 #endif
 
-void backward_pass (struct layer *mlp,float *y) {
+void backward_pass (struct mlp *m,float *y) {
 	// skip to last layer
-	struct layer *current_layer=mlp;
-	while (current_layer->next) current_layer=current_layer->next;
+	struct layer *current_layer=&(m->layers[m->layerc-1]);
 
 	// handle last layer separately
 	for (int i=0;i<current_layer->neurons;i++) current_layer->deltas[i]=current_layer->outputs[i]-y[i];
@@ -307,8 +316,8 @@ void backward_pass (struct layer *mlp,float *y) {
 	}
 }
 
-void update_weights (struct layer *mlp,float alpha) {
-	struct layer *current_layer = mlp->next;
+void update_weights (struct mlp *m,float alpha) {
+	struct layer *current_layer = &(m->layers[0]);
 
 	while (current_layer) {
 		for (int i=0;i<current_layer->neurons;i++) {
@@ -364,36 +373,6 @@ void initialize_signal_parameters (PARAMS myparams) {
 	myparams->sample_rate=SAMPLE_RATE;
 }
 
-void initialize_mlp (struct layer *layers) {
-	layers[0].isinput=1;
-	layers[0].neurons=HISTORY_LENGTH;
-	layers[0].prev=0;
-	layers[0].next=&layers[1];
-
-	layers[1].outputs=(float*)malloc(sizeof(float)*HISTORY_LENGTH);
-	layers[1].isinput=0;
-	layers[1].neurons=HIDDEN_SIZE;
-	layers[1].prev=&layers[0];
-	layers[1].next=&layers[2];
-	layers[1].weights=(float*)malloc(sizeof(float)*HIDDEN_SIZE*HISTORY_LENGTH);
-
-	for (int i=0;i<HIDDEN_SIZE*HISTORY_LENGTH;i++) layers[1].weights[i]=(float)rand()/RAND_MAX;
-	layers[1].biases=(float*)malloc(sizeof(float)*HIDDEN_SIZE);
-	for (int i=0;i<HIDDEN_SIZE;i++) layers[1].biases[i]=0.f;
-	layers[1].outputs=(float*)malloc(sizeof(float)*HIDDEN_SIZE);
-	layers[1].deltas=(float*)malloc(sizeof(float)*HIDDEN_SIZE);
-
-	layers[2].isinput=1;
-	layers[2].neurons=1;
-	layers[2].prev=&layers[1];
-	layers[2].next=0;
-	layers[2].weights=(float*)malloc(sizeof(float)*HIDDEN_SIZE);
-	layers[2].outputs=(float*)malloc(sizeof(float));
-	layers[2].deltas=(float *)malloc(sizeof(float));
-	layers[2].biases=(float *)malloc(sizeof(float));
-	layers[2].biases[0]=0.f;
-}
-
 void plot (SIGNAL mysignal,char *title) {
 	// dump signal
 	char str[4096];
@@ -425,7 +404,87 @@ void free_signal (SIGNAL mysignal) {
 	free(mysignal->s);
 }
 
-int main () {
+const char *argp_program_version = "online_training 0.0.1";
+const char *argp_program_bug_address = "<3D22>";
+static char doc[] = "RTML -- C implementation";
+static char args_doc[] = "INPUT_WAVEGEN INPUT_MLPX OUTPUT_MLPX";
+static struct argp_option options[] = {
+    { "snapshotinterval", 's', "INTERVAL", OPTION_ARG_OPTIONAL, "Every snapshotinterval many passes, an MLPX snapshot will be generated. (default: 50)"},
+    { 0 }
+};
+
+struct arguments {
+	int snapshotinterval;
+	char* inputmlpx;
+	char* inputwavegen;
+	char* outputmlpx;
+};
+
+static error_t parse_opt(int key, char* arg, struct argp_state *state) {
+	struct arguments *arguments = state->input;
+
+	switch(key) {
+		case 's':
+			if (arg == NULL) {
+				fprintf(stderr, "Must provide a parameter for --snapshotinterval\n");
+				return ARGP_ERR_UNKNOWN;
+			}
+
+			// this works around that in the short form, -s=X, the
+			// = is included in the arg, but not in the long form
+			// case.
+			arguments->snapshotinterval = atoi((*arg == '=') ? &(arg[1]) : arg);
+			break;
+
+		case ARGP_KEY_ARG:
+			if (state->arg_num == 0) {
+				arguments->inputwavegen = arg;
+			} else if (state->arg_num == 1) {
+				arguments->inputmlpx = arg;
+			} else if (state->arg_num == 2) {
+				arguments->outputmlpx = arg;
+			} else {
+				// too many args
+				argp_usage(state);
+			}
+			break;
+
+		case ARGP_KEY_END:
+			if (state->arg_num < 3) {
+				// not enough args
+				argp_usage(state);
+			}
+			break;
+
+		default:
+			return ARGP_ERR_UNKNOWN;
+	}
+
+	return 0;
+}
+
+static struct argp argp = { options, parse_opt, args_doc, doc };
+
+int main(int argc, char *argv[]) {
+	struct arguments arguments;
+
+	arguments.snapshotinterval = 50;
+	arguments.inputmlpx = NULL;
+	arguments.outputmlpx = NULL;
+	arguments.inputwavegen = NULL;
+
+	argp_parse(&argp, argc, argv, 0, 0, &arguments);
+
+	printf("snapshotinterval=%i\n", arguments.snapshotinterval);
+	printf("inputmlpx=%s\n", arguments.inputmlpx);
+	printf("outputmlpx=%s\n", arguments.outputmlpx);
+	printf("inputwavegen=%s\n", arguments.inputwavegen);
+
+	if (arguments.snapshotinterval < 1) {
+		fprintf(stderr, "--snapshotinterval must be at least 1\n");
+		exit(1);
+	}
+
 	struct mlp* m;
 
 	m = load_mlpx("input.mlpx", 0);
@@ -434,6 +493,8 @@ int main () {
 	take_mlpx_snapshot(m);
 
 	save_mlpx(m, "saved.mlpx");
+
+
 
 	return;
 

@@ -6,6 +6,7 @@
 #include <math.h>
 #include <string.h>
 #include <mlpx.h>
+#include <wavegen.h>
 #include <argp.h>
 
 #define	HISTORY_LENGTH	10
@@ -16,20 +17,20 @@
 #define PREDICTION_TIME	1
 
 struct params {
-	float sample_rate;
-	float time;
-	float *freqs;
-	float *phases;
-	float *amps;
+	double sample_rate;
+	double time;
+	double *freqs;
+	double *phases;
+	double *amps;
 };
 
 typedef struct params * PARAMS;
 
 struct signal {
-	float *t;
-	float *s;
+	double *t;
+	double *s;
 	int points;
-	float sample_rate;
+	double sample_rate;
 };
 
 typedef struct signal * SIGNAL;
@@ -38,10 +39,10 @@ struct layer {
 	int isinput;
 	int neurons;
 	int weightc;
-	float *weights;
-	float *biases;
-	float *outputs;
-	float *deltas;
+	double *weights;
+	double *biases;
+	double *outputs;
+	double *deltas;
 	struct layer *prev;
 	struct layer *next;
 };
@@ -49,7 +50,7 @@ struct layer {
 struct mlp {
 	int layerc;
 	struct layer* layers;
-	float alpha;
+	double alpha;
 	int mlpxhandle;
 };
 
@@ -61,14 +62,23 @@ struct mlp {
 // MLPX error has occurred.
 #define mlpx_must(_stmt) do { if ( (_stmt) != 0) { mlpx_fatal(); } } while(0)
 
+// Use if a fatal error has occurred relating to wavegen, this will print the
+// error to standard error, and then exit nonzero.
+#define wavegen_fatal() do { fprintf(stderr, "%s:%d:%s(): wavegen Error: %s\n", __FILE__, __LINE__, __func__, WGGetError()); exit(1); } while(0)
+
+// Execute the given statement. If it returns a nonzero value, assume a fatal
+// wavegen error has occurred.
+#define wavegen_must(_stmt) do { if ( (_stmt) != 0) { wavegen_fatal(); } } while(0)
+
 
 struct mlp* load_mlpx(char* path, int howinit);
 void take_mlpx_snapshot(struct mlp* m);
 void save_mlpx(struct mlp* m, char* path);
 void generate_synthetic_data (PARAMS myparams,SIGNAL mysignal);
-void backward_pass (struct mlp *m,float *y);
+void backward_pass (struct mlp *m,double *y);
 void update_weights (struct mlp *m);
-float mac(float prev_outputs[1024],float current_weights[1024],int i,int prev_neurons);
+double mac(double prev_outputs[1024],double current_weights[1024],int i,int prev_neurons);
 void forward_pass (struct mlp *m);
+struct signal* load_wavegen(char* path);
 
 #endif /* RTML_H */

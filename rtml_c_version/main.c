@@ -1,39 +1,39 @@
 #include "rtml.h"
 
 
-void subsample (SIGNAL in_signal,SIGNAL out_signal,float subsample_rate) {
+void subsample (SIGNAL in_signal,SIGNAL out_signal,double subsample_rate) {
 	int len = in_signal->points;
 	int len_new = out_signal->points = ceil(len / subsample_rate);
 
 	out_signal->sample_rate = in_signal->sample_rate/subsample_rate;
 	// allocate time and signal arrays
-	out_signal->s = (float *)malloc(sizeof(float) * len_new);
-	out_signal->t = (float *)malloc(sizeof(float) * len_new);
+	out_signal->s = (double *)malloc(sizeof(double) * len_new);
+	out_signal->t = (double *)malloc(sizeof(double) * len_new);
 
 	for (int i=0;i<len_new;i++) {
-		float position = (float)i * subsample_rate;
-		float position_frac = position - floorf(position);
+		double position = (double)i * subsample_rate;
+		double position_frac = position - floorf(position);
 		int position_int = (int)floorf(position);
 		out_signal->s[i] = (1.f - position_frac)*
 					in_signal->s[position_int] +
 					position_frac*
 					in_signal->s[position_int+1];
-		out_signal->t[i] = (float)i / out_signal->sample_rate;
+		out_signal->t[i] = (double)i / out_signal->sample_rate;
 	}
 }
 
 void initialize_signal_parameters (PARAMS myparams) {
-	myparams->freqs = (float*)malloc(sizeof(float)*4);
+	myparams->freqs = (double*)malloc(sizeof(double)*4);
 	myparams->freqs[0]=10;
 	myparams->freqs[1]=37;
 	myparams->freqs[2]=78;
 	myparams->freqs[3]=0;
-	myparams->phases = (float*)malloc(sizeof(float)*4);
+	myparams->phases = (double*)malloc(sizeof(double)*4);
 	myparams->phases[0]=0;
 	myparams->phases[1]=1;
 	myparams->phases[2]=2;
 	myparams->phases[3]=0;
-	myparams->amps = (float*)malloc(sizeof(float)*4);
+	myparams->amps = (double*)malloc(sizeof(double)*4);
 	myparams->amps[0]=1;
 	myparams->amps[1]=2;
 	myparams->amps[2]=3;
@@ -71,16 +71,16 @@ void plot (SIGNAL mysignal,char *title) {
 void generate_synthetic_data (PARAMS myparams,SIGNAL mysignal) {
 	// generate baseline time array
 	int points = (int)ceilf(myparams->sample_rate * myparams->time);
-	float sample_period = 1.f / myparams->sample_rate;
+	double sample_period = 1.f / myparams->sample_rate;
 
 	// allocate time and signal arrays
-	mysignal->s = (float *)malloc(sizeof(float) * points);
-	mysignal->t = (float *)malloc(sizeof(float) * points);
+	mysignal->s = (double *)malloc(sizeof(double) * points);
+	mysignal->t = (double *)malloc(sizeof(double) * points);
 
 	// synthesize
 	for (int i=0;i<points;i++) {
 		mysignal->s[i]=0.f;
-		mysignal->t[i]=sample_period * (float)i;
+		mysignal->t[i]=sample_period * (double)i;
 		for (int j=0;myparams->freqs[j]!=0.f;j++) {
 			mysignal->s[i] += myparams->amps[j]*sinf(2.f*M_PI*myparams->freqs[j]*mysignal->t[i] + myparams->phases[j]);
 		}
@@ -185,25 +185,20 @@ int main(int argc, char *argv[]) {
 	PARAMS myparams = (PARAMS)malloc(sizeof(struct params));
 	initialize_signal_parameters(myparams);
 
-	// synthesize and plot signal
-	SIGNAL mysignal = (SIGNAL)malloc(sizeof(struct signal));
-	generate_synthetic_data (myparams,mysignal);
-	plot(mysignal,"original signal");
-
-	SIGNAL mysignal_subsampled = (SIGNAL)malloc(sizeof(struct signal));
-	subsample(mysignal,mysignal_subsampled,0.25f);
-	plot(mysignal_subsampled,"original signal subsampled");
+	// load in signal from input wavegen file
+	SIGNAL mysignal_subsampled = load_wavegen(arguments.inputwavegen);
+	plot(mysignal_subsampled,"wavegen signal");
 
 	// set up predicted signal
 	SIGNAL mysignal_predicted=(SIGNAL)malloc(sizeof(struct signal));
 	// set number of points to that of subsampled signal
 	mysignal_predicted->points = mysignal_subsampled->points;
 	// allocate time axis
-	mysignal_predicted->t = (float *)malloc(mysignal_subsampled->points * sizeof(float));
+	mysignal_predicted->t = (double *)malloc(mysignal_subsampled->points * sizeof(double));
 	// copy time axis from subssampled signal
 	memcpy(mysignal_predicted->t,mysignal_subsampled->t,mysignal_subsampled->points);
 	// allocate y axis
-	mysignal_predicted->s = (float *)malloc(mysignal_subsampled->points * sizeof(float));
+	mysignal_predicted->s = (double *)malloc(mysignal_subsampled->points * sizeof(double));
 
 	// make sure that the size of the input layer is large enough
 	if (m->layers[0].neurons < HISTORY_LENGTH) {
@@ -247,7 +242,7 @@ int main(int argc, char *argv[]) {
 
 
 	// clean up
-	free(mysignal);
+	/* free(mysignal); */
 	free(mysignal_subsampled);
 	free(myparams->freqs);
 	free(myparams->phases);

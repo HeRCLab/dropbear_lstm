@@ -76,7 +76,7 @@ struct mlp* load_mlpx(char* path, int howinit) {
 		// read in weights from MLPX
 		nweights = lastlayersize * neurons;
 		layer->weightc = nweights;
-		layer->weights = malloc(sizeof(float) * nweights);
+		layer->weights = malloc(sizeof(double) * nweights);
 		if (layer->weights == NULL) {
 			fprintf(stderr, "could not allocate memory!\n");
 			exit(1);
@@ -84,13 +84,13 @@ struct mlp* load_mlpx(char* path, int howinit) {
 		for (int weightindex = 0 ; weightindex < nweights ; weightindex++) {
 			double weight;
 			mlpx_must(MLPXLayerGetWeight(handle, 0, layerindex, weightindex, &weight));
-			layer->weights[weightindex] = (float) weight;
+			layer->weights[weightindex] = (double) weight;
 			mlpx_must(MLPXLayerSetWeight(m->mlpxhandle, 0, layerindex, weightindex, weight));
 		}
 
 		// read in biases from MLPX
 		nbiases = neurons;
-		layer->biases = malloc(sizeof(float) * nbiases);
+		layer->biases = malloc(sizeof(double) * nbiases);
 		if (layer->biases == NULL) {
 			fprintf(stderr, "could not allocate memory!\n");
 			exit(1);
@@ -98,13 +98,13 @@ struct mlp* load_mlpx(char* path, int howinit) {
 		for (int biasindex = 0 ; biasindex < nbiases ; biasindex++) {
 			double bias;
 			mlpx_must(MLPXLayerGetBias(handle, 0, layerindex, biasindex, &bias));
-			layer->biases[biasindex] = (float) bias;
+			layer->biases[biasindex] = (double) bias;
 			mlpx_must(MLPXLayerSetBias(m->mlpxhandle, 0, layerindex, biasindex, bias));
 		}
 
 		// initialize outputs
 		noutputs = neurons;
-		layer->outputs = malloc(sizeof(float) * noutputs);
+		layer->outputs = malloc(sizeof(double) * noutputs);
 		if (layer->outputs == NULL) {
 			fprintf(stderr, "could not allocate memory!\n");
 			exit(1);
@@ -117,13 +117,13 @@ struct mlp* load_mlpx(char* path, int howinit) {
 				output = 0;
 			}
 
-			layer->outputs[outputindex] = (float) output;
+			layer->outputs[outputindex] = (double) output;
 			mlpx_must(MLPXLayerSetActivation(m->mlpxhandle, 0, layerindex, outputindex, output));
 		}
 
 		// initialize deltas
 		ndeltas = neurons;
-		layer->deltas = malloc(sizeof(float) * ndeltas);
+		layer->deltas = malloc(sizeof(double) * ndeltas);
 		if (layer->deltas == NULL) {
 			fprintf(stderr, "could not allocate memory!\n");
 			exit(1);
@@ -136,7 +136,7 @@ struct mlp* load_mlpx(char* path, int howinit) {
 				delta = 0;
 			}
 
-			layer->deltas[deltaindex] = (float) delta;
+			layer->deltas[deltaindex] = (double) delta;
 			mlpx_must(MLPXLayerSetDelta(m->mlpxhandle, 0, layerindex, deltaindex, delta));
 		}
 

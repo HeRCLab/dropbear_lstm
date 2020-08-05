@@ -1,6 +1,6 @@
 CC = gcc
-C_OPTS = $(shell mlpx-config --cflags)
-LINK_OPTS = -lm $(shell mlpx-config --libs)
+C_OPTS = $(shell mlpx-config --cflags) $(shell wavegen-config --cflags)
+LINK_OPTS = -lm $(shell mlpx-config --libs) $(shell wavegen-config --libs)
 sources = $(wildcard *.c)
 headers = $(wildcard *.h)
 objects = $(patsubst %.c,%.o,$(sources))

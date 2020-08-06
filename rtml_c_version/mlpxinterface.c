@@ -50,6 +50,7 @@ struct mlp* load_mlpx(char* path, int howinit) {
 	// values as those of the input MLPX.
 	mlpx_must(MLPXIsomorphicDuplicate(handle, &(m->mlpxhandle), "initializer"));
 	mlpx_must(MLPXSnapshotGetAlpha(handle, 0, &alpha));
+	m->alpha = alpha;
 	mlpx_must(MLPXSnapshotSetAlpha(m->mlpxhandle, 0, alpha));
 
 	// the "weights" for the input layer are nonsense away, but it makes it

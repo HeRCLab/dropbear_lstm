@@ -1,47 +1,5 @@
 #include "rtml.h"
 
-
-void subsample (SIGNAL in_signal,SIGNAL out_signal,double subsample_rate) {
-	int len = in_signal->points;
-	int len_new = out_signal->points = ceil(len / subsample_rate);
-
-	out_signal->sample_rate = in_signal->sample_rate/subsample_rate;
-	// allocate time and signal arrays
-	out_signal->s = (double *)malloc(sizeof(double) * len_new);
-	out_signal->t = (double *)malloc(sizeof(double) * len_new);
-
-	for (int i=0;i<len_new;i++) {
-		double position = (double)i * subsample_rate;
-		double position_frac = position - floorf(position);
-		int position_int = (int)floorf(position);
-		out_signal->s[i] = (1.f - position_frac)*
-					in_signal->s[position_int] +
-					position_frac*
-					in_signal->s[position_int+1];
-		out_signal->t[i] = (double)i / out_signal->sample_rate;
-	}
-}
-
-void initialize_signal_parameters (PARAMS myparams) {
-	myparams->freqs = (double*)malloc(sizeof(double)*4);
-	myparams->freqs[0]=10;
-	myparams->freqs[1]=37;
-	myparams->freqs[2]=78;
-	myparams->freqs[3]=0;
-	myparams->phases = (double*)malloc(sizeof(double)*4);
-	myparams->phases[0]=0;
-	myparams->phases[1]=1;
-	myparams->phases[2]=2;
-	myparams->phases[3]=0;
-	myparams->amps = (double*)malloc(sizeof(double)*4);
-	myparams->amps[0]=1;
-	myparams->amps[1]=2;
-	myparams->amps[2]=3;
-	myparams->amps[3]=4;
-	myparams->time = 2.f;
-	myparams->sample_rate=SAMPLE_RATE;
-}
-
 void plot (SIGNAL mysignal,char *title) {
 	// dump signal
 	char str[4096];
@@ -68,29 +26,6 @@ void plot (SIGNAL mysignal,char *title) {
 	fclose(myplot);
 }
 
-void generate_synthetic_data (PARAMS myparams,SIGNAL mysignal) {
-	// generate baseline time array
-	int points = (int)ceilf(myparams->sample_rate * myparams->time);
-	double sample_period = 1.f / myparams->sample_rate;
-
-	// allocate time and signal arrays
-	mysignal->s = (double *)malloc(sizeof(double) * points);
-	mysignal->t = (double *)malloc(sizeof(double) * points);
-
-	// synthesize
-	for (int i=0;i<points;i++) {
-		mysignal->s[i]=0.f;
-		mysignal->t[i]=sample_period * (double)i;
-		for (int j=0;myparams->freqs[j]!=0.f;j++) {
-			mysignal->s[i] += myparams->amps[j]*sinf(2.f*M_PI*myparams->freqs[j]*mysignal->t[i] + myparams->phases[j]);
-		}
-	}
-
-	mysignal->points = points;
-
-	mysignal->sample_rate = myparams->sample_rate;
-}
-
 void free_signal (SIGNAL mysignal) {
 	free(mysignal->t);
 	free(mysignal->s);
@@ -101,7 +36,7 @@ const char *argp_program_bug_address = "<3D22>";
 static char doc[] = "RTML -- C implementation";
 static char args_doc[] = "INPUT_WAVEGEN INPUT_MLPX OUTPUT_MLPX";
 static struct argp_option options[] = {
-    { "snapshotinterval", 's', "INTERVAL", OPTION_ARG_OPTIONAL, "Every snapshotinterval many passes, an MLPX snapshot will be generated. (default: 50)"},
+    { "snapshotinterval", 's', "INTERVAL", OPTION_ARG_OPTIONAL, "Every snapshotinterval many passes, an MLPX snapshot will be generated. (default: 250)"},
     { 0 }
 };
 
@@ -181,10 +116,6 @@ int main(int argc, char *argv[]) {
 
 	m = load_mlpx(arguments.inputmlpx, 0);
 
-	// set up signal
-	PARAMS myparams = (PARAMS)malloc(sizeof(struct params));
-	initialize_signal_parameters(myparams);
-
 	// load in signal from input wavegen file
 	SIGNAL mysignal_subsampled = load_wavegen(arguments.inputwavegen);
 	plot(mysignal_subsampled,"wavegen signal");
@@ -239,14 +170,6 @@ int main(int argc, char *argv[]) {
 	plot(mysignal_predicted,"predicted signal");
 
 	save_mlpx(m, arguments.outputmlpx);
-
-
-	// clean up
-	/* free(mysignal); */
-	free(mysignal_subsampled);
-	free(myparams->freqs);
-	free(myparams->phases);
-	free(myparams);
 
 	return 0;
 }

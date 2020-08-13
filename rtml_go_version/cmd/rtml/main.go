@@ -54,35 +54,41 @@ func RunRTML(nn *mlp.MLP, sig *wavegen.Signal, saveevery int) RTMLResult {
 	fmt.Printf("pre-training biases for layer 1 %v\n", nn.Layer[1].Bias)
 	res.NN = nn
 
-	for i := 2*parameters.HISTORY_LENGTH + 2*parameters.PREDICTION_TIME + 2; i < len(sig.T); i++ {
+	for i := parameters.HISTORY_LENGTH + parameters.PREDICTION_TIME; i < len(sig.T); i++ {
 
 		if i%saveevery == 0 {
 			nn.Snapshot()
 		}
 
 		// first train with the available data...
-		err := nn.ForwardPass(sig.S[i-2*parameters.HISTORY_LENGTH-2*parameters.PREDICTION_TIME-2 : i-parameters.HISTORY_LENGTH-2*parameters.PREDICTION_TIME-2])
+		err := nn.ForwardPass(sig.S[i-parameters.HISTORY_LENGTH-parameters.PREDICTION_TIME : i-parameters.HISTORY_LENGTH-parameters.PREDICTION_TIME+nn.Layer[0].TotalNeurons()])
 		if err != nil {
 			panic(err)
 		}
 
-		err = nn.BackwardPass(sig.S[i-parameters.HISTORY_LENGTH-parameters.PREDICTION_TIME-1 : i-parameters.HISTORY_LENGTH-parameters.PREDICTION_TIME])
+		err = nn.BackwardPass(sig.S[i : i+nn.Layer[len(nn.Layer)-1].TotalNeurons()])
 		if err != nil {
 			panic(err)
 		}
 
+		// make a prediction
+		t := sig.T[i] - float64(parameters.PREDICTION_TIME)/sig.SampleRate
+		res.Prediction = append(res.Prediction, wavegen.Sample{t, nn.OutputLayer().Output[0]})
+		res.Bias = append(res.Bias, wavegen.Sample{t, nn.OutputLayer().Bias[0]})
+
+		// update weights
 		nn.UpdateWeights()
 
 		// now make a prediction
-		nn.ForwardPass(sig.S[i-parameters.HISTORY_LENGTH-parameters.PREDICTION_TIME : i-parameters.PREDICTION_TIME])
+		// nn.ForwardPass(sig.S[i-parameters.HISTORY_LENGTH-parameters.PREDICTION_TIME : i-parameters.PREDICTION_TIME])
 
 		// t := sub.T[i-parameters.PREDICTION_TIME] // time of Activation[0]
 		// t := sub.T[i-parameters.PREDICTION_TIME] - float64(parameters.HISTORY_LENGTH+1)/sub.SampleRate
 		// t := sub.T[i] // time of Activation[9]
-		t := sig.T[i] - float64(parameters.PREDICTION_TIME)/sig.SampleRate
+		// t := sig.T[i] - float64(parameters.PREDICTION_TIME)/sig.SampleRate
 
-		res.Prediction = append(res.Prediction, wavegen.Sample{t, nn.OutputLayer().Output[0]})
-		res.Bias = append(res.Bias, wavegen.Sample{t, nn.OutputLayer().Bias[0]})
+		// res.Prediction = append(res.Prediction, wavegen.Sample{t, nn.OutputLayer().Output[0]})
+		// res.Bias = append(res.Bias, wavegen.Sample{t, nn.OutputLayer().Bias[0]})
 
 		// TODO: should probably do RMSE also
 

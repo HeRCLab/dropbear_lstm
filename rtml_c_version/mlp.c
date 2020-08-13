@@ -5,7 +5,7 @@
 void forward_pass (struct mlp* m) {
 	// start with second layer, since the first layer is the input layer and there's
 	// nothing to do there
-	struct layer *current_layer=&(m->layers[0]);
+	struct layer *current_layer=&(m->layers[1]);
 
 	while (current_layer=current_layer->next) {
 		// matrix-vector multiply

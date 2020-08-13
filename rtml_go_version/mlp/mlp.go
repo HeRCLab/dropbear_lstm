@@ -82,8 +82,9 @@ func NewLayer(size int, prev, next *Layer, g, gprime func(float64) float64) *Lay
 			l.Weight[i] = rand.Float64()
 		}
 	} else {
-		// This is the input layer, so there are no weights
-		l.Weight = nil
+		// This is the input layer, so we create a dummy list for
+		// compatibility with MLPX
+		l.Weight = make([]float64, size)
 	}
 
 	for i, _ := range l.Bias {
@@ -165,6 +166,63 @@ func NewMLPFromMLPX(m *mlpx.MLPX) (*MLP, error) {
 		nn.Layer[i].mlpxActivationString = layer.ActivationFunction
 	}
 
+	// get the initializer from the MLPX we just created inside of the MLP
+	initializer, err := nn.mlpx.Initializer()
+	if err != nil {
+		return nil, err
+	}
+
+	// now copy over the initializer data
+	for layerno, layerID := range snap.SortedLayerIDs() {
+		layer := snap.Layers[layerID]
+
+		if layer.Weights != nil {
+			temp := make([]float64, len(*layer.Weights))
+			initializer.Layers[layerID].Weights = &temp
+			for i, v := range *layer.Weights {
+				nn.Layer[layerno].Weight[i] = v
+				(*initializer.Layers[layerID].Weights)[i] = v
+			}
+		}
+
+		if layer.Outputs != nil {
+			temp := make([]float64, len(*layer.Outputs))
+			initializer.Layers[layerID].Outputs = &temp
+			for i, v := range *layer.Outputs {
+				nn.Layer[layerno].Output[i] = v
+				(*initializer.Layers[layerID].Outputs)[i] = v
+			}
+		}
+
+		if layer.Activations != nil {
+			temp := make([]float64, len(*layer.Activations))
+			initializer.Layers[layerID].Activations = &temp
+			for i, v := range *layer.Activations {
+				nn.Layer[layerno].Activation[i] = v
+				(*initializer.Layers[layerID].Activations)[i] = v
+			}
+		}
+
+		if layer.Deltas != nil {
+			temp := make([]float64, len(*layer.Deltas))
+			initializer.Layers[layerID].Deltas = &temp
+			for i, v := range *layer.Deltas {
+				nn.Layer[layerno].Delta[i] = v
+				(*initializer.Layers[layerID].Deltas)[i] = v
+			}
+		}
+
+		if layer.Biases != nil {
+			temp := make([]float64, len(*layer.Biases))
+			initializer.Layers[layerID].Biases = &temp
+			for i, v := range *layer.Biases {
+				nn.Layer[layerno].Bias[i] = v
+				(*initializer.Layers[layerID].Biases)[i] = v
+			}
+		}
+
+	}
+
 	return nn, nil
 }
 
@@ -196,6 +254,7 @@ func NewMLP(alpha float64, g, gprime func(float64) float64, layerSizes ...int) *
 				v,                      // neurons
 				"",                     // pred
 				fmt.Sprintf("%d", i+1)) // succ
+
 		} else if i == len(layerSizes)-1 {
 			// the output layer doesn't share our activation
 			// function, since we want it to have full freedom of

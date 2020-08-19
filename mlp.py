@@ -167,6 +167,7 @@ def main():
     want_verbose = args.verbose
 
     y_predicted = np.zeros((len(x),))
+    y_error = [0] * training_window
     results_idx = training_window
 
     # Online training fun
@@ -202,7 +203,9 @@ def main():
     for i in range(0, size):
         diffs[i] = np.square(y_predicted[i+training_window] - x[i+training_window])  # noqa: E501
     rmse = math.sqrt(np.mean(diffs))
+    y_error += diffs.tolist()
     # print("Global RMSE: {}".format(rmse))
+    y_error += [0] * training_window
 
     # Print JSON blob for other tools to consume.
     out = {
@@ -226,23 +229,29 @@ def main():
     if args.plot:
         import matplotlib.pyplot as plt  # Intentionally late import.
 
-        num_plots = 2
+        #num_plots = 2
+        num_plots = 1
         x_data = np.arange(len(x))
 
         # Plot subplot for each signal.
         fig, axs = plt.subplots(num_plots, 1, sharex=True)
+        ax2 = axs.twinx()
         y_data = x
-        axs[0].plot(x_data, y_data, '-')
-        axs[0].set_ylabel('Signal')
+        axs.plot(x_data, x, 'r-', label="Signal")
+        axs.plot(x_data, y_predicted, 'b-', label="Predicted")
+        ax2.plot(x_data, y_error, 'g-', label="Error")
+        axs.set_ylabel('Signal')
+        ax2.set_ylabel("Error")
 
-        y_data = y_predicted
-        axs[1].plot(x_data, y_data, 'r-')
-        axs[1].plot(x_data, x, 'b-')
-        axs[1].set_ylabel('Predicted (w/real data)')
+        #y_data = y_predicted
+        #axs[1].plot(x_data, y_data, 'r-')
+        #axs[1].plot(x_data, x, 'b-')
+        #axs[1].set_ylabel('Predicted (w/real data)')
+        fig.legend() # Captures labels from entire plot.
 
         # Put a title on the plot and the window, then render.
-        fig.suptitle('(MLP) Original vs Predicted signals', fontsize=15)
-        fig.canvas.set_window_title('MLP Predicted Signals')
+        #fig.suptitle('(MLP) Original vs Predicted signals', fontsize=15)
+        #fig.canvas.set_window_title('MLP Predicted Signals')
         plt.show()
 
 

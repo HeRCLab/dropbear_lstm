@@ -12,6 +12,8 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.backend import clear_session
 import tensorflow as tf
+# Cite: https://stackoverflow.com/a/38645250
+tf.get_logger().setLevel('INFO')
 
 
 def parse_args():

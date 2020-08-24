@@ -1,4 +1,4 @@
-all: signal1.wavegen nn1.mlpx nn2.mlpx
+all: signal1.wavegen nn1.mlpx nn2.mlpx nn3.mlpx
 .PHONY: all
 
 signal1.wavegen:
@@ -9,6 +9,9 @@ nn1.mlpx:
 
 nn2.mlpx:
 	mlpx --seed 1 new --sizes 10,10,10,1 -A sigmoid --alpha 0.0000001 -o "$@"
+
+nn3.mlpx:
+	mlpx --seed 1 new --sizes 10,10,10,1 -A identity --alpha 0.00001 -o "$@"
 
 clean:
 	rm -f *.wavegen *.mlpx

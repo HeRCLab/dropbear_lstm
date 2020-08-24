@@ -37,6 +37,7 @@ func RunRTML(nn *mlp.MLP, sig *wavegen.Signal, saveevery int) RTMLResult {
 		Prediction:  make([]wavegen.Sample, 0),
 		Bias:        make([]wavegen.Sample, 0),
 		RMSE:        make([]wavegen.Sample, 0),
+		NN:          nn,
 	}
 
 	for i, t := range sig.T {
@@ -48,53 +49,40 @@ func RunRTML(nn *mlp.MLP, sig *wavegen.Signal, saveevery int) RTMLResult {
 		res.Subsampled = append(res.Subsampled, wavegen.Sample{t, sig.S[i]})
 	}
 
-	// nn := mlp.NewMLP(parameters.ALPHA, mlp.ReLU, mlp.ReLUDeriv, parameters.HISTORY_LENGTH, parameters.HIDDEN_SIZE, 1)
-	// nn := mlp.NewMLP(parameters.ALPHA, mlp.Identity, mlp.Unit, parameters.HISTORY_LENGTH, parameters.HIDDEN_SIZE, 1)
-	fmt.Printf("pre-training weights for layer 1 %v\n", nn.Layer[1].Weight)
-	fmt.Printf("pre-training biases for layer 1 %v\n", nn.Layer[1].Bias)
-	res.NN = nn
+	t := 0.0
+	for i := 0; i < parameters.HISTORY_LENGTH+parameters.PREDICTION_TIME; i++ {
+		res.Prediction = append(res.Prediction, wavegen.Sample{t, 0})
 
-	for i := parameters.HISTORY_LENGTH + parameters.PREDICTION_TIME; i < len(sig.T); i++ {
+		t += 1 / sig.SampleRate
+	}
+
+	for i := parameters.HISTORY_LENGTH + parameters.PREDICTION_TIME; i < sig.Size(); i++ {
+
+		// copy input into outputs of input layer
+		for j := range nn.Layer[0].Output {
+			s := sig.MustIndex(i - parameters.HISTORY_LENGTH - parameters.PREDICTION_TIME)
+			nn.Layer[0].Activation[j] = s.S
+		}
+
+		// make a prediction
+		nn.ForwardPass(nn.Layer[0].Activation)
+		res.Prediction = append(res.Prediction, wavegen.Sample{t, nn.OutputLayer().Activation[0]})
+		res.Bias = append(res.Bias, wavegen.Sample{t, nn.OutputLayer().Bias[0]})
+
+		// propagate actual results
+		output := []float64{}
+		for j := 0; j < nn.OutputLayer().TotalNeurons(); j++ {
+			output = append(output, sig.MustIndex(i+j).S)
+		}
+		nn.BackwardPass(output)
+
+		nn.UpdateWeights()
 
 		if i%saveevery == 0 {
 			nn.Snapshot()
 		}
 
-		// first train with the available data...
-		err := nn.ForwardPass(sig.S[i-parameters.HISTORY_LENGTH-parameters.PREDICTION_TIME : i-parameters.HISTORY_LENGTH-parameters.PREDICTION_TIME+nn.Layer[0].TotalNeurons()])
-		if err != nil {
-			panic(err)
-		}
-
-		err = nn.BackwardPass(sig.S[i : i+nn.Layer[len(nn.Layer)-1].TotalNeurons()])
-		if err != nil {
-			panic(err)
-		}
-
-		// make a prediction
-		t := sig.T[i] - float64(parameters.PREDICTION_TIME)/sig.SampleRate
-		res.Prediction = append(res.Prediction, wavegen.Sample{t, nn.OutputLayer().Output[0]})
-		res.Bias = append(res.Bias, wavegen.Sample{t, nn.OutputLayer().Bias[0]})
-
-		// update weights
-		nn.UpdateWeights()
-
-		// now make a prediction
-		// nn.ForwardPass(sig.S[i-parameters.HISTORY_LENGTH-parameters.PREDICTION_TIME : i-parameters.PREDICTION_TIME])
-
-		// t := sub.T[i-parameters.PREDICTION_TIME] // time of Activation[0]
-		// t := sub.T[i-parameters.PREDICTION_TIME] - float64(parameters.HISTORY_LENGTH+1)/sub.SampleRate
-		// t := sub.T[i] // time of Activation[9]
-		// t := sig.T[i] - float64(parameters.PREDICTION_TIME)/sig.SampleRate
-
-		// res.Prediction = append(res.Prediction, wavegen.Sample{t, nn.OutputLayer().Output[0]})
-		// res.Bias = append(res.Bias, wavegen.Sample{t, nn.OutputLayer().Bias[0]})
-
-		// TODO: should probably do RMSE also
-
-		// XXX: where does this magic number come from?!
-		// predchan <- Point{t + float64(20)/sub.SampleRate, nn.OutputLayer().Activation[0]}
-
+		t += 1 / sig.SampleRate
 	}
 
 	return res
@@ -144,7 +132,10 @@ func main() {
 	res := RunRTML(nn, wf.Signal, *saveevery)
 
 	if *savemlpx != "" {
-		res.NN.SaveSnapshot(*savemlpx)
+		err := res.NN.SaveSnapshot(*savemlpx)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	if *saveplot != "" {

@@ -10,6 +10,8 @@ import (
 
 	"github.com/akamensky/argparse"
 
+	"github.com/cheggaaa/pb/v3"
+
 	"math"
 
 	"github.com/herclab/wavegen/pkg/wavegen"
@@ -79,7 +81,7 @@ func (p RTMLParameters) PredictionWindowValues(sig *wavegen.Signal, tp float64) 
 	return w
 }
 
-func (p RTMLParameters) RunRTML(nn *mlp.MLP, sig *wavegen.Signal, saveevery int) RTMLResult {
+func (p RTMLParameters) RunRTML(nn *mlp.MLP, sig *wavegen.Signal, saveevery int, showprogress bool) RTMLResult {
 
 	res := RTMLResult{
 		GroundTruth: make([]wavegen.Sample, 0),
@@ -101,10 +103,19 @@ func (p RTMLParameters) RunRTML(nn *mlp.MLP, sig *wavegen.Signal, saveevery int)
 		res.Prediction = append(res.Prediction, wavegen.Sample{t, 0})
 	}
 
+	var bar *pb.ProgressBar
+	if showprogress {
+		bar = pb.StartNew(int((sig.Duration() - p.PredictionLength - p.PredictionOffset) * p.Frequency))
+	}
+
 	// Now we actually run the neural network. Note that the upper bound on
 	// tp has to accommodate for the fact that we need data in the
 	// prediction window for training during each step.
 	for tp := 0.0; tp < (sig.Duration() - p.PredictionLength - p.PredictionOffset); tp += 1.0 / p.Frequency {
+
+		if showprogress {
+			bar.Increment()
+		}
 
 		// Get the input, the history window.
 		input := p.HistoryWindowValues(sig, tp)
@@ -133,6 +144,10 @@ func (p RTMLParameters) RunRTML(nn *mlp.MLP, sig *wavegen.Signal, saveevery int)
 		}
 	}
 
+	if showprogress {
+		bar.Finish()
+	}
+
 	return res
 }
 
@@ -158,6 +173,8 @@ func main() {
 	savemlpx := parser.String("m", "savemlpx", &argparse.Options{Help: "Save snapshots in MLPX format to this file."})
 
 	saveplot := parser.String("p", "saveplot", &argparse.Options{Help: "Save results plot in this file."})
+
+	showprog := parser.Flag("P", "progress", &argparse.Options{Help: "Show progress bar during execution."})
 
 	saveevery := parser.Int("e", "saveevery", &argparse.Options{
 		Help:    "Save an MLPX snapshot every saveevery iterations",
@@ -185,7 +202,7 @@ func main() {
 		panic(err)
 	}
 
-	res := params.RunRTML(nn, wf.Signal, *saveevery)
+	res := params.RunRTML(nn, wf.Signal, *saveevery, *showprog)
 
 	if *savemlpx != "" {
 		err := res.NN.SaveSnapshot(*savemlpx)

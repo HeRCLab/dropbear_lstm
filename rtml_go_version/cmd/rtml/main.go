@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"github.com/herclab/dropbear_lstm/rtml_go_version/mlp"
-	"github.com/herclab/dropbear_lstm/rtml_go_version/mlp/parameters"
 
 	"github.com/herclab/herc-file-formats/mlpx/go/mlpx"
 
@@ -22,18 +21,68 @@ import (
 
 type RTMLResult struct {
 	GroundTruth []wavegen.Sample
-	Subsampled  []wavegen.Sample
 	Prediction  []wavegen.Sample
 	Bias        []wavegen.Sample
 	RMSE        []wavegen.Sample
 	NN          *mlp.MLP
 }
 
-func RunRTML(nn *mlp.MLP, sig *wavegen.Signal, saveevery int) RTMLResult {
+type RTMLParameters struct {
+	// Frequency is the sample rate used by other parameters. For example
+	// HistoryLength * Frequency should be a number of samples.
+	Frequency float64
+
+	// HistoryLength is the history length L_h in seconds
+	HistoryLength float64
+
+	// PredictionOffset is the prediction offset Δp in seconds
+	PredictionOffset float64
+
+	//PredictionLength is the prediction length Lp in seconds
+	PredictionLength float64
+
+	// TrainingWindow is the training window Wt in seconds
+	TrainingWindow float64
+}
+
+// TrainingWindowValues returns an array of signal values comprising the
+// training window. The samples will be evenly spaced with a frequency of
+// p.Frequency.
+func (p RTMLParameters) TrainingWindowValues(sig *wavegen.Signal) []float64 {
+	w := []float64{}
+	for t := 0.0; t < p.TrainingWindow; t += 1.0 / p.Frequency {
+		w = append(w, sig.Interpolate(t)[0].S)
+	}
+
+	return w
+}
+
+// HistoryWindowValues returns an array of signal values comprising the
+// history window relative to the current time tp.
+func (p RTMLParameters) HistoryWindowValues(sig *wavegen.Signal, tp float64) []float64 {
+	w := []float64{}
+	for t := tp - p.HistoryLength; t < tp; t += 1.0 / p.Frequency {
+		w = append(w, sig.Interpolate(t)[0].S)
+	}
+
+	return w
+}
+
+// PredictionWindowValues returns an array of signal values comprising the
+// prediction window relative to the current time tp.
+func (p RTMLParameters) PredictionWindowValues(sig *wavegen.Signal, tp float64) []float64 {
+	w := []float64{}
+	for t := tp + p.PredictionOffset; t <= tp+p.PredictionOffset+p.PredictionLength; t += 1.0 / p.Frequency {
+		w = append(w, sig.Interpolate(t)[0].S)
+	}
+
+	return w
+}
+
+func (p RTMLParameters) RunRTML(nn *mlp.MLP, sig *wavegen.Signal, saveevery int) RTMLResult {
 
 	res := RTMLResult{
 		GroundTruth: make([]wavegen.Sample, 0),
-		Subsampled:  make([]wavegen.Sample, 0),
 		Prediction:  make([]wavegen.Sample, 0),
 		Bias:        make([]wavegen.Sample, 0),
 		RMSE:        make([]wavegen.Sample, 0),
@@ -44,45 +93,44 @@ func RunRTML(nn *mlp.MLP, sig *wavegen.Signal, saveevery int) RTMLResult {
 		res.GroundTruth = append(res.GroundTruth, wavegen.Sample{t, sig.S[i]})
 	}
 
-	for i, t := range sig.T {
-		// XXX: should actually subsample???
-		res.Subsampled = append(res.Subsampled, wavegen.Sample{t, sig.S[i]})
-	}
-
-	t := 0.0
-	for i := 0; i < parameters.HISTORY_LENGTH+parameters.PREDICTION_TIME; i++ {
+	// Create a set of empty values within the training window.
+	//
+	// NOTE: we want t to be strictly less than the training window because
+	// we start tp at p.TrainingWindow later.
+	for t := 0.0; t < p.TrainingWindow; t += 1.0 / p.Frequency {
 		res.Prediction = append(res.Prediction, wavegen.Sample{t, 0})
-
-		t += 1 / sig.SampleRate
 	}
 
-	for i := parameters.HISTORY_LENGTH + parameters.PREDICTION_TIME; i < sig.Size(); i++ {
+	// Now we actually run the neural network. Note that the upper bound on
+	// tp has to accommodate for the fact that we need data in the
+	// prediction window for training during each step.
+	for tp := 0.0; tp < (sig.Duration() - p.PredictionLength - p.PredictionOffset); tp += 1.0 / p.Frequency {
 
-		// copy input into outputs of input layer
-		for j := range nn.Layer[0].Output {
-			s := sig.MustIndex(i - parameters.HISTORY_LENGTH - parameters.PREDICTION_TIME)
-			nn.Layer[0].Activation[j] = s.S
+		// Get the input, the history window.
+		input := p.HistoryWindowValues(sig, tp)
+
+		// Make a prediction.
+		nn.ForwardPass(input)
+
+		// We only save the results if we are outside of the training
+		// window.
+		if tp >= p.TrainingWindow {
+			res.Prediction = append(res.Prediction, wavegen.Sample{tp, nn.OutputLayer().Activation[0]})
+			res.Bias = append(res.Bias, wavegen.Sample{tp, nn.OutputLayer().Bias[0]})
 		}
 
-		// make a prediction
-		nn.ForwardPass(nn.Layer[0].Activation)
-		res.Prediction = append(res.Prediction, wavegen.Sample{t, nn.OutputLayer().Activation[0]})
-		res.Bias = append(res.Bias, wavegen.Sample{t, nn.OutputLayer().Bias[0]})
+		// Get data for the backwards pass.
+		expectedOutput := p.PredictionWindowValues(sig, tp)
 
-		// propagate actual results
-		output := []float64{}
-		for j := 0; j < nn.OutputLayer().TotalNeurons(); j++ {
-			output = append(output, sig.MustIndex(i+j).S)
-		}
-		nn.BackwardPass(output)
+		// Perform the backwards pass.
+		nn.BackwardPass(expectedOutput)
 
+		// and perform a weight update
 		nn.UpdateWeights()
 
-		if i%saveevery == 0 {
+		if int(tp*p.Frequency)%saveevery == 0 {
 			nn.Snapshot()
 		}
-
-		t += 1 / sig.SampleRate
 	}
 
 	return res
@@ -93,6 +141,14 @@ func rmse(theta1, theta2 float32) float32 {
 }
 
 func main() {
+	params := RTMLParameters{
+		Frequency:        5000.0,
+		HistoryLength:    10.0 / 5000.0,
+		PredictionOffset: 0,
+		PredictionLength: 1.0 / 5000.0,
+		TrainingWindow:   100.0 / 5000.0,
+	}
+
 	parser := argparse.NewParser("rtml", "real time machine learning")
 
 	inputfile := parser.String("i", "input", &argparse.Options{Required: true, Help: "Input Wavegen file."})
@@ -129,7 +185,7 @@ func main() {
 		panic(err)
 	}
 
-	res := RunRTML(nn, wf.Signal, *saveevery)
+	res := params.RunRTML(nn, wf.Signal, *saveevery)
 
 	if *savemlpx != "" {
 		err := res.NN.SaveSnapshot(*savemlpx)
@@ -149,7 +205,6 @@ func main() {
 
 		err = plotutil.AddLinePoints(p,
 			"Ground Truth", wavegen.SampleList(res.GroundTruth),
-			"Subsampled", wavegen.SampleList(res.Subsampled),
 			"Prediction", wavegen.SampleList(res.Prediction),
 			"Bias", wavegen.SampleList(res.Bias))
 		if err != nil {

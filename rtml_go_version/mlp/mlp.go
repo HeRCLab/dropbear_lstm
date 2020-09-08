@@ -513,6 +513,32 @@ func (nn *MLP) UpdateWeights() {
 				// implied to be 1
 				layer.Bias[i] -= nn.Alpha * layer.Delta[i]
 			}
+
+			// NaN check
+			if math.IsNaN(layer.Bias[i]) {
+				fmt.Printf("NaN in neuron %d bias, layer %d\n", i, l)
+				layer.Bias[i] = 0
+			}
+
+			if math.IsNaN(layer.Weight[i]) {
+				fmt.Printf("NaN in neuron %d weight , layer %d\n", i, l)
+				layer.Weight[i] = 0
+			}
+
+			if math.IsNaN(layer.Activation[i]) {
+				fmt.Printf("NaN in neuron %d activation, layer %d\n", i, l)
+				layer.Activation[i] = 0
+			}
+
+			if math.IsNaN(layer.Output[i]) {
+				fmt.Printf("NaN in neuron %d output, layer %d\n", i, l)
+				layer.Output[i] = 0
+			}
+
+			if math.IsNaN(layer.Delta[i]) {
+				fmt.Printf("NaN in neuron %d delta, layer %d\n", i, l)
+				layer.Delta[i] = 0
+			}
 		}
 	}
 }

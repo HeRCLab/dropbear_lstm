@@ -29,6 +29,8 @@ type RTMLResult struct {
 	NN          *mlp.MLP
 }
 
+const epsilon float64 = 0.00001
+
 type RTMLParameters struct {
 	// Frequency is the sample rate used by other parameters. For example
 	// HistoryLength * Frequency should be a number of samples.
@@ -63,7 +65,7 @@ func (p RTMLParameters) TrainingWindowValues(sig *wavegen.Signal) []float64 {
 // history window relative to the current time tp.
 func (p RTMLParameters) HistoryWindowValues(sig *wavegen.Signal, tp float64) []float64 {
 	w := []float64{}
-	for t := tp - p.HistoryLength; t < tp; t += 1.0 / p.Frequency {
+	for t := tp - p.HistoryLength; t+epsilon < tp; t += 1.0 / p.Frequency {
 		w = append(w, sig.Interpolate(t)[0].S)
 	}
 
@@ -74,7 +76,7 @@ func (p RTMLParameters) HistoryWindowValues(sig *wavegen.Signal, tp float64) []f
 // prediction window relative to the current time tp.
 func (p RTMLParameters) PredictionWindowValues(sig *wavegen.Signal, tp float64) []float64 {
 	w := []float64{}
-	for t := tp + p.PredictionOffset; t <= tp+p.PredictionOffset+p.PredictionLength; t += 1.0 / p.Frequency {
+	for t := tp + p.PredictionOffset; t+epsilon <= tp+p.PredictionOffset+p.PredictionLength; t += 1.0 / p.Frequency {
 		w = append(w, sig.Interpolate(t)[0].S)
 	}
 
@@ -121,7 +123,10 @@ func (p RTMLParameters) RunRTML(nn *mlp.MLP, sig *wavegen.Signal, saveevery int,
 		input := p.HistoryWindowValues(sig, tp)
 
 		// Make a prediction.
-		nn.ForwardPass(input)
+		err := nn.ForwardPass(input)
+		if err != nil {
+			panic(err)
+		}
 
 		// We only save the results if we are outside of the training
 		// window.
@@ -134,7 +139,10 @@ func (p RTMLParameters) RunRTML(nn *mlp.MLP, sig *wavegen.Signal, saveevery int,
 		expectedOutput := p.PredictionWindowValues(sig, tp)
 
 		// Perform the backwards pass.
-		nn.BackwardPass(expectedOutput)
+		err = nn.BackwardPass(expectedOutput)
+		if err != nil {
+			panic(err)
+		}
 
 		// and perform a weight update
 		nn.UpdateWeights()
@@ -161,7 +169,8 @@ func main() {
 		HistoryLength:    10.0 / 5000.0,
 		PredictionOffset: 0,
 		PredictionLength: 1.0 / 5000.0,
-		TrainingWindow:   100.0 / 5000.0,
+		// TrainingWindow:   100.0 / 5000.0,
+		TrainingWindow: 0,
 	}
 
 	parser := argparse.NewParser("rtml", "real time machine learning")

@@ -169,8 +169,8 @@ func main() {
 		HistoryLength:    10.0 / 5000.0,
 		PredictionOffset: 0,
 		PredictionLength: 1.0 / 5000.0,
-		// TrainingWindow:   100.0 / 5000.0,
-		TrainingWindow: 0,
+		TrainingWindow:   100.0 / 5000.0,
+		// TrainingWindow: 0,
 	}
 
 	parser := argparse.NewParser("rtml", "real time machine learning")

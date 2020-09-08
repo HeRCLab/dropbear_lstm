@@ -1,8 +1,14 @@
-all: signal1.wavegen nn1.mlpx nn2.mlpx nn3.mlpx
+all: signal1.wavegen signal2.wavegen signal3.wavegen nn1.mlpx nn2.mlpx nn3.mlpx nn4.mlpx
 .PHONY: all
 
 signal1.wavegen:
 	wavegen generate -f 10 -f 37 -f 78 -p 0 -p 1 -p 2 -a 1 -a 2 -a 3  -d 2 -s 5000 -o "$@"
+
+signal2.wavegen:
+	wavegen generate -f 10 -f 37 -f 78 -p 0 -p 1 -p 2 -a 0.1 -a 0.2 -a 0.3 -d 2 -s 5000 -o "$@"
+
+signal3.wavegen:
+	wavegen generate -f 10 -f 37 -f 78 -p 0 -p 1 -p 2 -a 0.1 -a 0.2 -a 0.3 -d 0.3 -s 5000 -o "$@"
 
 nn1.mlpx:
 	mlpx --seed 1 new --sizes 10,10,1 -A sigmoid --alpha 0.0001 -o "$@"
@@ -12,6 +18,10 @@ nn2.mlpx:
 
 nn3.mlpx:
 	mlpx --seed 1 new --sizes 10,10,10,1 -A identity --alpha 0.00001 -o "$@"
+
+nn4.mlpx:
+	mlpx --seed 1 new --sizes 10,10,1 -A identity --alpha 0.0001 -o "$@"
+
 
 clean:
 	rm -f *.wavegen *.mlpx

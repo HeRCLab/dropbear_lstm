@@ -2,3 +2,20 @@
 *.pyo
 
 venv/*
+
+# SpinalHDL project ignores.
+rtml_spinal_version/incremental_db/*
+rtml_spinal_version/db/*
+rtml_spinal_version/output_files/*
+rtml_spinal_version/project/*
+rtml_spinal_version/resources/*
+rtml_spinal_version/simulation/*
+rtml_spinal_version/simWorkspace/*
+rtml_spinal_version/target/*
+rtml_spinal_version/tmp/*
+
+# Fixed point test case generator.
+rtml_spinal_version/fptestcase/venv/*
+rtml_spinal_version/fptestcase/spfpm
+rtml_spinal_version/fptestcase/spfpm/*
+

@@ -1,0 +1,91 @@
+// Spinal HDL translation of the Forward Pass logic in the Vivado HLS code.
+package rtml
+
+import spinal.core._
+import spinal.lib._
+
+
+// Hardware definition.
+class RTMLTop(weights_filename: Option[String] = None,
+              inputs_filename: Option[String] = None) extends Component {
+  val io = new Bundle {
+    val valid = out Bool
+    val output =  out SInt(64 bits)
+  }
+
+  val output_value = Reg(SInt(64 bits)) init(0)
+  val valid = Reg(Bool) init(false)
+  val rdy = Bool
+  val addr = Reg(UInt(32 bits)) init(0)
+  val wdata = Reg(Bits(32 bits)) init(0)
+  val rdata = Bits(32 bits)
+  val sel = Reg(Bool) init(True)
+  val wr = Reg(Bool) init(False)
+
+  val mac_core = new MAC
+
+  val inputs = new Area {
+    val mem = inputs_filename match {
+      case Some(filename) => Mem(Bits(32 bits), initialContent = Tools.readmemh(filename))
+      case None => Mem(Bits(32 bits), wordCount = 1024)
+    }
+  }
+
+  val weights = new Area {
+    val mem = weights_filename match {
+      case Some(filename) => Mem(Bits(32 bits), initialContent = Tools.readmemh(filename))
+      case None => Mem(Bits(32 bits), wordCount = 1024)
+    }
+  }
+
+  // Area to handle feeding values into the MAC core.
+  // Also handles marking outputs as valid.
+  val mac_loader = new Area {
+    val counter = Counter(0 to 1023)
+    // Load a value from RAM into the MAC core every cycle.
+    mac_core.io.input := S(inputs.mem.readSync(counter))
+    mac_core.io.weight := S(weights.mem.readSync(counter))
+    //}
+    //for (i <- 0 to 1023) { // TODO
+    //  mac_core.io.inputs(counter) := 0
+    //  mac_core.io.weights(counter) := 0
+    //}
+    when(counter.willOverflowIfInc) {
+      mac_core.io.enable := True
+      io.valid := True
+    }.otherwise {
+      mac_core.io.enable := False
+      io.valid := False
+    }
+    output_value := mac_core.io.output
+    counter.increment()
+  }
+
+  // This output catches the end value coming out of the MAC core.
+  io.output := output_value
+}
+
+// Generate the RTMLTop's Verilog.
+object RTMLTopVerilog {
+  def main(args: Array[String]) {
+    SpinalVerilog(new RTMLTop)
+  }
+}
+
+// Generate the RTMLTop's VHDL.
+object RTMLTopVhdl {
+  def main(args: Array[String]) {
+    SpinalVhdl(new RTMLTop)
+  }
+}
+
+
+// Define a custom SpinalHDL configuration with synchronous reset instead of the default asynchronous one. This configuration can be resued everywhere
+object RTMLSpinalConfig extends SpinalConfig(defaultConfigForClockDomains = ClockDomainConfig(resetKind = SYNC))
+
+// Generate the MyTopLevel's Verilog using the above custom configuration.
+object RTMLTopWithCustomConfig {
+  def main(args: Array[String]) {
+    RTMLSpinalConfig.generateVerilog(new RTMLTop)
+  }
+}

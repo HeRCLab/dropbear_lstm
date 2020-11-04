@@ -24,6 +24,13 @@ import spinal.lib.bus.amba4.axi._
 import spinal.lib.bus.bram._
 import scala.collection.mutable.ArrayBuffer
 
+// Enum used for logical states of the core.
+// This helps with trigger conditions for streams, since Spinal doesn't
+// support directly inspecting the FSM state.
+object ForwardPassLogicalState extends SpinalEnum {
+  val sIdle, sWork, sDone = newElement()
+}
+
 
 // Hardware definition.
 //class forward_pass(config: ForwardPassConfig) extends Component {
@@ -34,6 +41,7 @@ class ForwardPass() extends Component {
     val result = master Stream(Bits(32 bits))
     // [CUSTOM] Hand-rolled valid/ready/payload bus.
     val control = slave Stream(UInt(10 bits))
+    val debug_state = out Bits(2 bits)
     val debug_input = out Bits(32 bits)
     val debug_weights = out Vec(Bits(32 bits), 7)
     val debug_accum = out Vec(Bits(32 bits), 7)
@@ -53,12 +61,25 @@ class ForwardPass() extends Component {
     intermediate_flow.translateWith(source)
   }
 
+  def all_inputs_ready(elements: Seq[fixedpoint_mac32]): Bool = {
+    elements.map(_.io.a.ready).reduce(_ && _) &&
+    elements.map(_.io.b.ready).reduce(_ && _) &&
+    elements.map(_.io.c.ready).reduce(_ && _)
+  }
+  def all_results_ready(elements: Seq[fixedpoint_mac32]): Bool = elements.map(_.io.result.valid).reduce(_ && _)
+  def all_results_fire(elements: Seq[fixedpoint_mac32]): Bool = elements.map(_.io.result.fire).reduce(_ && _)
+
+  val logical_state = ForwardPassLogicalState()
+  logical_state := ForwardPassLogicalState.sIdle // Default assignment. Manually overridden in state machine.
+
   // Generate MAC cores. Wiring comes later.
   val mac_cores = new ArrayBuffer[fixedpoint_mac32](7)
   for (i <- 0 to 6) {
     mac_cores += new fixedpoint_mac32(latency=1)
   }
-
+  for (i <- 0 to 6) {
+    mac_cores(i).io.result.ready := True
+  }
   //----------------------------------------------------------------
   // BRAM fetch logic.
   // TODO: Add address incrementing logic.
@@ -66,6 +87,17 @@ class ForwardPass() extends Component {
   // TODO: Add 1 cycle delay to ensure reads go through?
   val address_counter = Counter(0 to 1023)
   val input_counter = UInt(10 bits) // Counts from 0..nsum_inputs.
+  val output_counter = Counter(0 to 6)
+  val accumulator_counter = Counter(0 to 1023)
+
+  val input_value = Bits(32 bits)
+  val weights = Vec(Bits(32 bits), 7)
+  //val accumulator = Vec(Reg(Bits(32 bits)) init(B"32'x0000"), 7)
+  var mapped_accum_regs = new ArrayBuffer[Bits](7)
+  for (i <- 0 to 6) {
+    mapped_accum_regs += RegNextWhen(mac_cores(i).io.result.payload, mac_cores(i).io.result.fire, 0)
+  }
+  val accumulator = Vec(elements=mapped_accum_regs)
 
   // BRAM fetch.
   for (ram <- io.bram) {
@@ -80,128 +112,108 @@ class ForwardPass() extends Component {
   io.control.ready := False  // Default assignment.
   val axi = new Area {
     val work_item_count = Reg(UInt(10 bits)) init(0)
-    val work_items_remaining = RegNext(work_item_count - address_counter)
-    val fsm_state = Reg(UInt(2 bits)) init(0)
+    //val work_items_remaining = RegNext(work_item_count - address_counter)
   }
 
-  val output_counter = Counter(0 to 6)
-  val accumulator_counter = Counter(0 to 1023)
-  val accumulator = Vec(Reg(Bits(32 bits)) init(B"32'x0000"), 7) //.keep() // TODO: Remove .keep()
-
-  // Critical signals for knowing transition conditions.
-  //val inputs_exhausted = axi.work_items_remaining === 0 // TODO: Might add a condition of not being in idle state.
-  val inputs_exhausted = axi.work_items_remaining === 0 // TODO: Might add a condition of not being in idle state.
-  val accumulator_finished = accumulator_counter.value === axi.work_item_count
-  val in_done_state = False
-  val inputs_exhausted_delayed = Delay(inputs_exhausted, 1) // 1 cycle after exhaustion of inputs.
-  val pipeline_complete = inputs_exhausted && accumulator_finished
-
-  val accumulator_out_streams = new ArrayBuffer[Stream[Bits]](7)
-  val accumulator_in_streams = new ArrayBuffer[Stream[Bits]](7)
-  var output_fifo_stream = new StreamMux(Bits(32 bits), 7)
-  output_fifo_stream.io.select := output_counter.value
-  for (i <- 0 to 6) {
-    accumulator_out_streams += regToStream(accumulator(i)).takeWhen(in_done_state)
-    accumulator_in_streams += regToStream(accumulator(i)).haltWhen(inputs_exhausted)
-    output_fifo_stream.io.inputs(i) << accumulator_out_streams(i)
-  }
-  io.result << output_fifo_stream.io.output
-
-  // Read bits and stuff directly into registers, with no conversion logic
-  val input_value = Bits(32 bits)
+  // Stream from comb input value.
   input_value := io.bram(0).rddata
-  val input_stream = regToStream(input_value).haltWhen(inputs_exhausted)
+  val input_stream = regToStream(input_value)
   val input_streams = StreamFork(input_stream, portCount=7, synchronous=true)
 
-  val weights = Vec(Bits(32 bits), 7)
+  // Streams from comb weights values.
   for (i <- 1 to 7) {
     weights(i-1) := io.bram(i).rddata
   }
   val weights_streams = new ArrayBuffer[Stream[Bits]](7)
   for (i <- 0 to 6) {
-    weights_streams += regToStream(weights(i)).haltWhen(inputs_exhausted)
-    // Alternately, maybe try takeWhen, or clearValidWhen?
+    weights_streams += regToStream(weights(i))
   }
 
-  // DEBUG
+  // Streams for the accumulator reads.
+  val accumulator_read_streams = new ArrayBuffer[Stream[Bits]](7)
+  //val accumulator_write_streams = new ArrayBuffer[Stream[Bits]](7)
+  for (i <- 0 to 6) {
+    accumulator_read_streams += regToStream(accumulator(i))
+    //accumulator_write_streams(i) += regToStream(accumulator(i)).takeWhen(all_results_ready(mac_cores))
+  }
+
+  // Wiring for MAC core inputs.
+  for (i <- 0 to 6) {
+    mac_cores(i).io.a << input_streams(i).haltWhen(logical_state === ForwardPassLogicalState.sDone)
+    mac_cores(i).io.b << weights_streams(i).haltWhen(logical_state === ForwardPassLogicalState.sDone)
+    mac_cores(i).io.c << accumulator_read_streams(i).haltWhen(logical_state === ForwardPassLogicalState.sDone)
+    //accumulator_write_streams(i) << mac_cores(i).io.result
+  }
+
+  // Stream for the comb outputs selection mux.
+  var output_fifo_stream = new StreamMux(Bits(32 bits), 7)
+  output_fifo_stream.io.select := output_counter.value
+  for (i <- 0 to 6) {
+    output_fifo_stream.io.inputs(i) << accumulator_read_streams(i)
+  }
+  io.result << output_fifo_stream.io.output.continueWhen(logical_state === ForwardPassLogicalState.sDone)
+  //io.result.payload := output_fifo_stream.io.output.payload // DEBUG
+  //io.result.valid := False // DEBUG
+
+  // DEBUG ---------------------------------------------------------
   io.debug_accum_count := accumulator_counter.value
   io.debug_address_count := address_counter.value
   io.debug_input := input_value
+  io.debug_state := logical_state.asBits
   for (i <- 0 to 6) {
     io.debug_weights(i) := weights(i)
     io.debug_accum(i) := accumulator(i)
   }
 
-  // Streams -> MAC Core
-  // MAC Core -> Direct Reg write
-  for (i <- 0 to 6) {
-    mac_cores(i).io.a << input_streams(i)
-    mac_cores(i).io.b << weights_streams(i)
-    mac_cores(i).io.c << accumulator_in_streams(i)
-    mac_cores(i).io.result.ready := !in_done_state // TODO: Done state && reads available.
-  }
-
   //----------------------------------------------------------------
   // State Machine
-
   val fsm = new StateMachine {
     val stateIdle = new State with EntryPoint
     val stateWork = new State
     val stateDone = new State
-
     stateIdle
-      .whenIsActive {
-        io.control.ready := True
-        in_done_state := False
-
-        output_counter.clear()
+      .onEntry {
+        logical_state       := ForwardPassLogicalState.sIdle
+        io.control.ready    := True
+        axi.work_item_count := 0
+        address_counter.clear()
         accumulator_counter.clear()
-        //axi.fsm_state := forward_pass_state.Idle
-        // When AXI write to control register happens, transition: Idle -> Working
-        when(io.control.valid) {
+        output_counter.clear()
+        for (i <- 0 to 6) { accumulator(i) := 0 }
+      }
+      .whenIsActive {
+        logical_state    := ForwardPassLogicalState.sIdle
+        io.control.ready := True
+        when (io.control.valid) {
           axi.work_item_count := io.control.payload
           goto(stateWork)
         }
       }
-
     stateWork
-      .whenIsActive {
-        // Join on all inputs being ready before advancing.
-        when (mac_cores.map(_.io.a.ready).reduce(_ && _) &&
-              mac_cores.map(_.io.b.ready).reduce(_ && _) &&
-              mac_cores.map(_.io.c.ready).reduce(_ && _)) {
-          address_counter.increment()
-        }
-        when (mac_cores.map(_.io.result.valid).reduce(_ && _)) {
-          for (i <- 0 to 6) {
-            accumulator(i) := mac_cores(i).io.result.payload
-          }
-          accumulator_counter.increment()
-        }
-
-        // When inputs exhausted, and pipeline complete, transition: Working -> Done
-        when(pipeline_complete) {
-          goto(stateDone)
-        }
+      .onEntry {
+        logical_state    := ForwardPassLogicalState.sWork
+        io.control.ready := False
       }
-
-    stateDone
       .whenIsActive {
-        //axi.fsm_state := forward_pass_state.Done
-        axi.work_item_count := 0
-        in_done_state := True
+        logical_state    := ForwardPassLogicalState.sWork
+        when (all_results_ready(mac_cores))                  { address_counter.increment() }
+        when (all_results_fire(mac_cores))                   { accumulator_counter.increment() }
+        when (address_counter.value === axi.work_item_count) { goto(stateDone) }
+      }
+    stateDone
+      .onEntry {
+        logical_state    := ForwardPassLogicalState.sDone
+        io.control.ready := False
         address_counter.clear()
-
-        when (io.result.ready && io.result.valid) {
-          output_counter.increment()
-        }
-
-        // Go back to Idle state when FIFO is emptied.
-        when (output_counter.willOverflow) {
-          goto(stateIdle)
-        }
+        accumulator_counter.clear()
+      }
+      .whenIsActive {
+        logical_state    := ForwardPassLogicalState.sDone
+        when (io.result.ready)             { output_counter.increment() }
+        when (output_counter.willOverflow) { goto(stateIdle) }
       }
   }
+
 
   //----------------------------------------------------------------
   // Rename signals

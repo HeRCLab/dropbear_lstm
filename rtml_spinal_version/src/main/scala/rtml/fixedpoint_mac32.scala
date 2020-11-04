@@ -59,14 +59,11 @@ class fixedpoint_mac32(core_clock: ClockDomain = ClockDomain.current, latency: I
 
     when (io.a.valid && io.b.valid && io.c.valid) {
       when (mac_result.io.push.ready) {
-        valid_tracker := (valid_tracker |<< 1) | 1
         mac_result.io.push.valid := True
-      }.otherwise {
-        valid_tracker := (valid_tracker |<< 1)
       }
     }
     //io.result.payload := (io.a.payload.asSInt * io.b.payload.asSInt).asBits(31 downto 0)
-    io.result.valid := valid_tracker(latency-1) && mac_result.io.pop.valid
+    io.result.valid := mac_result.io.pop.valid
     io.result.payload := mac_result.io.pop.payload
     mac_result.io.pop.ready := io.result.ready
   }

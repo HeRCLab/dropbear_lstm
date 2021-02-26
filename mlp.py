@@ -53,7 +53,7 @@ from datetime import datetime
 import configparser
 from pony.orm import db_session, Database, commit, count, PrimaryKey, Required, Optional
 import numpy as np
-#import scipy.signal as signal
+import scipy.signal as signal
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.backend import clear_session
@@ -67,6 +67,7 @@ tf.autograph.set_verbosity(2)
 default_job_dict = {
     'author': 'unknown',
     'dataset': '',
+    'downsample-factor': '1.0',
     'layers': '',
     'activations': '',
     'epochs': '',
@@ -147,6 +148,8 @@ def override_defaults(config, default_section_dict):
                 out[section][k] = [int(x) for x in v.split(',')]  # String split + int
             elif k == 'activations':
                 out[section][k] = v.split(',')  # Just string split
+            elif k == 'downsample-factor':
+                out[section][k] = float(v)
             elif k == 'training-window':
                 out[section][k] = parse_ranges(v)
             elif k == 'sample-window':
@@ -174,6 +177,7 @@ class Result(db.Entity):
     id = PrimaryKey(int, auto=True)
     author = Required(str)
     dataset = Required(str)
+    downsample_factor = Required(float, default=1.0)
     layers = Required(str)
     activations = Required(str)
     epochs = Required(int)
@@ -185,6 +189,7 @@ class Result(db.Entity):
     rmse_global = Optional(float)
     finished = Required(bool, default=False)
 
+    # TODO: Fill in the other fields.
     def to_json(self):
         out = {
             "creation_ts": self.creation_ts.isoformat() + 'Z',
@@ -384,6 +389,7 @@ def run_model(raw_dataset, layers, activations, epochs, training_window, sample_
 def grid_search(config_dict, raw_dataset):
     author = config_dict['author']
     dataset = config_dict['dataset']
+    downsample_factor = config_dict['downsample-factor']
     layers = config_dict['layers']
     activations = config_dict['activations']
     epochs_list = config_dict['epochs']
@@ -391,7 +397,6 @@ def grid_search(config_dict, raw_dataset):
     sample_window_list = config_dict['sample-window']
     forecast_length_list = config_dict['forecast-length']
     prediction_gap_list = config_dict['prediction-gap']
-    #resample_factor =   # TODO: Add resampling soonish?
     num_runs_per_parameter_set = config_dict['runs-per-parameter-set']
     # Print diagnostic info so user can bail if they made a mistake.
     total_required_runs = (len(epochs_list) * len(training_window_list) *
@@ -417,6 +422,7 @@ def grid_search(config_dict, raw_dataset):
                         with db_session:
                             row_count = count(r for r in Result
                                               if r.dataset == dataset
+                                              and r.downsample_factor == downsample_factor
                                               and r.layers == cannonicalize(layers)
                                               and r.activations == cannonicalize(activations)
                                               and r.epochs == epochs
@@ -431,6 +437,7 @@ def grid_search(config_dict, raw_dataset):
                                 # Insert an unfinished row for now. We'll update it later.
                                 record = Result(author=author,
                                                 dataset=dataset,
+                                                downsample_factor=downsample_factor,
                                                 layers=cannonicalize(layers),
                                                 activations=cannonicalize(activations),
                                                 epochs=epochs,
@@ -475,15 +482,20 @@ def main():
 
     # Perform the horrifying grid search here.
     for k in parameter_sets:
-        filename = parameter_sets[k]['dataset']
+        params = parameter_sets[k]
+        filename = params['dataset']
+        downsample_factor = params['downsample-factor']
         # Load up dataset before each search:
         data = None
         with open(filename, "r") as f:
             data = json.loads(f.read())
         x = np.array(data["acceleration_data"])
+        # Downsampling occurs here, before we get into the grid search.
+        if downsample_factor != 1.0:
+            x = np.array(signal.resample(x, int(x.shape[0] / downsample_factor)))
         #input_sample_rate = np.float(data["accelerometer_sample_rate"])
         print("Starting run for: '{}'".format(k), file=sys.stderr)
-        grid_search(parameter_sets[k], x)
+        grid_search(params, x)
 
     # Plot only if the user asked for plotting.
     #if args.plot:

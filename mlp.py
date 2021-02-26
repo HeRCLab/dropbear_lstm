@@ -43,6 +43,7 @@
 # --------------------------------------------------------
 # Imports & Global configuration
 
+import os
 import sys
 import math
 import json
@@ -56,12 +57,12 @@ import numpy as np
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.backend import clear_session
-import tensorflow as tf
-
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # Used to silence tensorflow banner printout.
+import tensorflow as tf  # noqa: E402
 # TensorFlow dumps too much debug info at startup. Hush it up.
 # Cite: https://stackoverflow.com/a/38645250
-tf.get_logger().setLevel('INFO')
-tf.autograph.set_verbosity(1)
+tf.get_logger().setLevel('WARNING')
+tf.autograph.set_verbosity(2)
 
 default_job_dict = {
     'author': 'unknown',
@@ -303,7 +304,7 @@ def iterative_predict_window(model, x_train, training_window, forecast_length):
 # Returns a dictionary of results.
 def run_model(raw_dataset, layers, activations, epochs, training_window, sample_window,
               forecast_length, prediction_gap,
-              use_gpu=False, want_verbose=False, online=False):
+              use_gpu=False, want_verbose=0, online=False):
     x = np.array(raw_dataset, copy=True)
     # Ensure every hidden layer gets an explicit activation function.
     if len(layers) > len(activations):
@@ -451,6 +452,7 @@ def grid_search(config_dict, raw_dataset):
                                     print("\nCompleted {} runs so far. At {}/{}".format(run_counter, iter_counter, total_required_runs), file=sys.stderr)
                         iter_counter += 1
                         print('.', end='', file=sys.stderr)
+                        sys.stderr.flush()
 
     print('', file=sys.stderr)  # Print a trailing newline for formatting.
 

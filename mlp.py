@@ -5,6 +5,12 @@
 #   python3 mlp.py CONFIG_FILE [DB_NAME.sqlite]
 #
 # Description:
+#  -- JSON Input Format --
+#   {
+#     "acceleration_data": [float, float, ...],
+#     "accelerometer_sample_rate": int
+#   }
+#
 #  -- Database --
 #   If no database name is specified, the script will look for one with
 #   the same name as the configuration file, creating a new SQLite3 database

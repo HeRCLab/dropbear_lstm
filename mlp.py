@@ -102,7 +102,7 @@ def parse_args():
 
 # Read and parse config file.
 def read_config_ini(filename):
-    config = configparser.SafeConfigParser()
+    config = configparser.ConfigParser()
     config.read(filename)
     return config
 
@@ -251,7 +251,7 @@ def create_model(layers, activations, sampling_window, output_layer_size=1, want
     layers = list(layers)
     activations = list(activations)  # Clone the list so it can be consumed.
     # If provided a list, it will create 1 layer per integer list item.
-    if isinstance(layers, collections.Iterable):
+    if isinstance(layers, collections.abc.Iterable):
         for u in layers:
             if top_layer:
                 model.add(Dense(u, input_shape=(sampling_window,), activation=activations.pop(0)))
@@ -262,7 +262,7 @@ def create_model(layers, activations, sampling_window, output_layer_size=1, want
     else:
         model.add(Dense(layers, input_shape=(sampling_window,), activation=activations[0]))
     model.add(Dense(output_layer_size))  # Default: 1
-    model.compile(loss='mean_squared_error', optimizer='adam', verbose=want_verbose)
+    model.compile(loss='mean_squared_error', optimizer='adam')
     return model
 
 

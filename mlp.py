@@ -188,7 +188,6 @@ class Result(db.Entity):
     activations = Required(str)
     epochs = Required(int)
     training_window = Required(int)
-    sample_window = Required(int)
     forecast_length = Required(int)
     prediction_gap = Required(int)
     creation_ts = Required(datetime, default=lambda: datetime.utcnow())
@@ -211,38 +210,14 @@ def cannonicalize(ls):
 # --------------------------------------------------------
 # ML Functions
 
-def generate_training_samples(x,
-                              training_window,
-                              sampling_window,
-                              prediction_gap,
-                              forecast_length):
-    assert training_window >= sampling_window, "Sampling window must be smaller than training window."
-    end_train = len(x)-prediction_gap-forecast_length-training_window
-    out = []
-
-    for i in range(0, end_train, training_window):
-        x_train = []
-        y_train = []
-
-        # Prepare training data.
-        for j in range(0, training_window):
-            start_idx = i - sampling_window + j
-            if start_idx < 1:
-                continue
-            end_idx = i + j
-            # Slice off `training_window` of input data.
-            x_train += [x[start_idx:end_idx]]
-            # Slice off biiiiig
-            end_idx = end_idx+prediction_gap
-            y_train += [x[end_idx:end_idx+forecast_length]]
-        x_train = np.array(x_train)
-        y_train = np.array(y_train)
-
-        # HACK: This is to prevent null windows from happening, which is apparently a flavor of janky indexing we can have happen here.
-        if len(x_train) > 0 and len(y_train) > 0:
-            out.append((i, x_train, y_train))
-
-    return out
+def generate_training_example(x, training_window, prediction_gap, forecast_length, start_idx=0):
+    y_start_idx = start_idx + training_window + prediction_gap
+    x_train = np.array(x[start_idx:start_idx+training_window])
+    y_train = np.array(x[y_start_idx:y_start_idx+forecast_length])
+    # The reshaping here makes TF happy with the vectors.
+    x_train = x_train.reshape(1, training_window)
+    y_train = y_train.reshape(forecast_length, 1)
+    return (x_train, y_train)
 
 
 def create_model(layers, activations, sampling_window, output_layer_size=1, want_verbose=0):
@@ -296,24 +271,9 @@ def train_model(layers,
     return model
 
 
-# Predicts a future window of data, in chunks of forecast_length.
-def iterative_predict_window(model, x_train, training_window, forecast_length):
-    out_window = np.zeros((training_window,))
-    for i in range(0, training_window, forecast_length):
-        future_x = np.array([x_train[i]])
-        y_pred = model.predict([future_x])
-        # print("Prediction: {}".format(y_pred))
-        y_pred = y_pred.flatten()
-        # Do some funky slicing on the last window, leave others alone.
-        end_idx = i+len(y_pred)
-        y_pred = [y_pred, y_pred[:end_idx-training_window]][end_idx > training_window]
-        out_window[i:min(i+len(y_pred), training_window)] = y_pred
-    return out_window
-
-
 # This used to be the guts of the `main` function; it's now its own function.
 # Returns a dictionary of results.
-def run_model(raw_dataset, layers, activations, epochs, training_window, sample_window,
+def run_model(raw_dataset, layers, activations, epochs, training_window,
               forecast_length, prediction_gap,
               use_gpu=False, want_verbose=0, online=False):
     x = np.array(raw_dataset, copy=True)
@@ -322,39 +282,24 @@ def run_model(raw_dataset, layers, activations, epochs, training_window, sample_
         len_diff = len(layers) - len(activations)
         activations += ["linear" for x in range(0, len_diff)]
     model = None
-    prev_model = None
 
     y_predicted = np.zeros((len(x),))
     y_error = [0] * training_window
     results_idx = training_window
 
-    # Online training fun
-    training_examples = generate_training_samples(x, training_window, sample_window, prediction_gap, forecast_length)  # noqa E501
-    #print("train_examples: {}".format([(i, len(x), len(y)) for i,x,y in training_examples]))  # DEBUG
+    assert (training_window + prediction_gap + forecast_length) < len(x), "Dataset length must not be shorter than training window!"  # noqa: E501
 
-    for (idx, x_train, y_train) in training_examples:
-        # PREDICTION (Normal)
-        # Prediction across this buffer of samples, using the previous
-        # window's model.
-        if prev_model is not None:
-            y_pred = iterative_predict_window(prev_model, x_train, training_window, forecast_length)
-            y_predicted[results_idx:results_idx+len(y_pred)] = y_pred
-            results_idx += len(y_pred)
-
-        # Normalize the training data.
-        # TODO
-
-        # Train the model + get predictions.
-        if online and model is not None:
-            model = train_model(layers, activations, x_train, y_train, sample_window, forecast_length, epochs=epochs, want_gpu=use_gpu, model=model, want_verbose=want_verbose)
-        else:
-            model = train_model(layers, activations, x_train, y_train, sample_window, forecast_length, epochs=epochs, want_gpu=use_gpu, want_verbose=want_verbose)
+    # Main online I-MLP training loop.
+    # Generates a training example, then updates the model, then predicts with that model.
+    model = None
+    end_idx = len(x) - (training_window + prediction_gap + forecast_length)
+    for i in range(0, end_idx):
+        x_train, y_train = generate_training_example(x, training_window, prediction_gap, forecast_length, start_idx=i)
+        model = train_model(layers, activations, x_train, y_train, training_window, forecast_length, epochs=epochs, want_gpu=use_gpu, model=model, want_verbose=want_verbose)
+        # Predict a future chunk of data.
         y_pred = model.predict(x_train)
-
-        prev_model = model  # Swap in the last window's model.
-
-        # Clean up all excess state Keras is keeping around.
-        clear_session()
+        y_predicted[results_idx:results_idx+len(y_pred)] = y_pred
+        results_idx += len(y_pred)
 
     # Computed global RMSE.
     size = len(y_predicted)-(training_window*2)
@@ -366,6 +311,9 @@ def run_model(raw_dataset, layers, activations, epochs, training_window, sample_
     # print("Global RMSE: {}".format(rmse))
     y_error += [0] * training_window
 
+    # Clean up any/all excess state Keras is keeping around.
+    clear_session()
+
     # Return dictionary for other functions to consume.
     out = {
         "activations": ",".join([str(x) for x in activations]),
@@ -373,7 +321,6 @@ def run_model(raw_dataset, layers, activations, epochs, training_window, sample_
         "forecast_length": forecast_length,
         "prediction_gap": prediction_gap,
         "training_window": training_window,
-        "sample_window": sample_window,
         "epochs": epochs,
         "layers": ",".join([str(x) for x in layers]),
         "rmse_global": rmse,
@@ -400,72 +347,66 @@ def grid_search(config_dict, raw_dataset):
     activations = config_dict['activations']
     epochs_list = config_dict['epochs']
     training_window_list = config_dict['training-window']
-    sample_window_list = config_dict['sample-window']
     forecast_length_list = config_dict['forecast-length']
     prediction_gap_list = config_dict['prediction-gap']
     num_runs_per_parameter_set = config_dict['runs-per-parameter-set']
     # Print diagnostic info so user can bail if they made a mistake.
     total_required_runs = (len(epochs_list) * len(training_window_list) *
-                           len(sample_window_list) * len(forecast_length_list) *
-                           len(prediction_gap_list) * num_runs_per_parameter_set)
+                           len(forecast_length_list) * len(prediction_gap_list) *
+                           num_runs_per_parameter_set)
     print("This parameter set will require up to {} runs.".format(total_required_runs), file=sys.stderr)
     iter_counter = 0
     run_counter = 0
     # Actual search loop.
     for epochs in epochs_list:
         for training_window in training_window_list:
-            for sample_window in sample_window_list:
-                if sample_window > training_window:
-                    continue
-                for forecast_length in forecast_length_list:
-                    for prediction_gap in prediction_gap_list:
-                        # Implicit else:
-                        # Query database to see if we have data from enough runs.
-                        # Note: If the `with` statement is too slow, we can
-                        #   use the `@db_session` decorator on a function
-                        #   instead for more precise release of DB sessions.
-                        row_count = 0
+            for forecast_length in forecast_length_list:
+                for prediction_gap in prediction_gap_list:
+                    # Implicit else:
+                    # Query database to see if we have data from enough runs.
+                    # Note: If the `with` statement is too slow, we can
+                    #   use the `@db_session` decorator on a function
+                    #   instead for more precise release of DB sessions.
+                    row_count = 0
+                    with db_session:
+                        row_count = count(r for r in Result
+                                          if r.dataset == dataset
+                                          and r.downsample_factor == downsample_factor
+                                          and r.layers == cannonicalize(layers)
+                                          and r.activations == cannonicalize(activations)
+                                          and r.epochs == epochs
+                                          and r.training_window == training_window
+                                          and r.forecast_length == forecast_length
+                                          and r.prediction_gap == prediction_gap
+                                          and r.finished)
+                    # Not enough runs? We can fix that.
+                    if row_count < num_runs_per_parameter_set:
                         with db_session:
-                            row_count = count(r for r in Result
-                                              if r.dataset == dataset
-                                              and r.downsample_factor == downsample_factor
-                                              and r.layers == cannonicalize(layers)
-                                              and r.activations == cannonicalize(activations)
-                                              and r.epochs == epochs
-                                              and r.training_window == training_window
-                                              and r.sample_window == sample_window
-                                              and r.forecast_length == forecast_length
-                                              and r.prediction_gap == prediction_gap
-                                              and r.finished)
-                        # Not enough runs? We can fix that.
-                        if row_count < num_runs_per_parameter_set:
-                            with db_session:
-                                # Insert an unfinished row for now. We'll update it later.
-                                record = Result(author=author,
-                                                dataset=dataset,
-                                                downsample_factor=downsample_factor,
-                                                layers=cannonicalize(layers),
-                                                activations=cannonicalize(activations),
-                                                epochs=epochs,
-                                                training_window=training_window,
-                                                sample_window=sample_window,
-                                                forecast_length=forecast_length,
-                                                prediction_gap=prediction_gap,
-                                                finished=False)
-                                commit()  # Ensure we flush the record to disk.
-                                # Run the model with the provided parameters.
-                                result = run_model(raw_dataset, layers, activations, epochs, training_window, sample_window, forecast_length, prediction_gap, use_gpu=False, want_verbose=False, online=False)
-                                # Now we update the row.
-                                record.finished = True
-                                record.rmse_global = result["rmse_global"]
-                                commit()
-                                # Provide occasional status messages so that the user doesn't think the job is hung up.
-                                run_counter += 1
-                                if run_counter % 1000 == 0:
-                                    print("\nCompleted {} runs so far. At {}/{}".format(run_counter, iter_counter, total_required_runs), file=sys.stderr)
-                        iter_counter += 1
-                        print('.', end='', file=sys.stderr)
-                        sys.stderr.flush()
+                            # Insert an unfinished row for now. We'll update it later.
+                            record = Result(author=author,
+                                            dataset=dataset,
+                                            downsample_factor=downsample_factor,
+                                            layers=cannonicalize(layers),
+                                            activations=cannonicalize(activations),
+                                            epochs=epochs,
+                                            training_window=training_window,
+                                            forecast_length=forecast_length,
+                                            prediction_gap=prediction_gap,
+                                            finished=False)
+                            commit()  # Ensure we flush the record to disk.
+                            # Run the model with the provided parameters.
+                            result = run_model(raw_dataset, layers, activations, epochs, training_window, forecast_length, prediction_gap, use_gpu=False, want_verbose=False, online=False)
+                            # Now we update the row.
+                            record.finished = True
+                            record.rmse_global = result["rmse_global"]
+                            commit()
+                            # Provide occasional status messages so that the user doesn't think the job is hung up.
+                            run_counter += 1
+                            if run_counter % 1000 == 0:
+                                print("\nCompleted {} runs so far. At {}/{}".format(run_counter, iter_counter, total_required_runs), file=sys.stderr)
+                    iter_counter += 1
+                    print('.', end='', file=sys.stderr)
+                    sys.stderr.flush()
 
     print('', file=sys.stderr)  # Print a trailing newline for formatting.
 

@@ -48,7 +48,7 @@
 
 # --------------------------------------------------------
 # Imports & Global configuration
-
+from multiprocessing import Pool
 import os
 import sys
 import math
@@ -83,6 +83,7 @@ default_job_dict = {
     'prediction-gap': '0',
     'runs-per-parameter-set': '1',
     'nprocs': '1',
+    'computation_time': '0',
 }
 
 
@@ -192,6 +193,7 @@ class Result(db.Entity):
     prediction_gap = Required(int)
     creation_ts = Required(datetime, default=lambda: datetime.utcnow())
     rmse_global = Optional(float)
+    computation_time = Required(float, default=1.0)
     finished = Required(bool, default=False)
 
     # TODO: Fill in the other fields.
@@ -291,16 +293,24 @@ def run_model(raw_dataset, layers, activations, epochs, training_window,
 
     # Main online I-MLP training loop.
     # Generates a training example, then updates the model, then predicts with that model.
+    pred_time = list()
     model = None
     end_idx = len(x) - (training_window + prediction_gap + forecast_length)
+    
     for i in range(0, end_idx):
         x_train, y_train = generate_training_example(x, training_window, prediction_gap, forecast_length, start_idx=i)
         model = train_model(layers, activations, x_train, y_train, training_window, forecast_length, epochs=epochs, want_gpu=use_gpu, model=model, want_verbose=want_verbose)
         # Predict a future chunk of data.
+        start = datetime.now()
         y_pred = model.predict(x_train)
+        computation_time = (datetime.now() - start)
+        computation_time = computation_time.total_seconds()
+        pred_time.append(computation_time)
         y_predicted[results_idx:results_idx+len(y_pred)] = y_pred
         results_idx += len(y_pred)
-
+    
+    computation_time = (sum(pred_time)/len(pred_time))
+    
     # Computed global RMSE.
     size = len(y_predicted)-(training_window*2)
     diffs = np.ndarray((size,), float)
@@ -324,9 +334,36 @@ def run_model(raw_dataset, layers, activations, epochs, training_window,
         "epochs": epochs,
         "layers": ",".join([str(x) for x in layers]),
         "rmse_global": rmse,
+        "computation_time": computation_time,
         "metadata": json.dumps({}),
     }
     return out
+
+
+# HACK: Currently just shove a list of parameters in and pattern match out the variables.
+#   This is ugly, but effective for now.
+def work_function(arg_list):
+    raw_dataset, author, dataset, downsample_factor, layers, activations, epochs, training_window, forecast_length, prediction_gap = arg_list
+    with db_session:
+        # Insert an unfinished row for now. We'll update it later.
+        record = Result(author=author,
+                        dataset=dataset,
+                        downsample_factor=downsample_factor,
+                        layers=cannonicalize(layers),
+                        activations=cannonicalize(activations),
+                        epochs=epochs,
+                        training_window=training_window,
+                        forecast_length=forecast_length,
+                        prediction_gap=prediction_gap,
+                        finished=False)
+        commit()  # Ensure we flush the record to disk.
+        # Run the model with the provided parameters.
+        result = run_model(raw_dataset, layers, activations, epochs, training_window, forecast_length, prediction_gap, use_gpu=False, want_verbose=False, online=False)
+        # Now we update the row.
+        record.finished = True
+        record.rmse_global = result["rmse_global"]
+        record.computation_time = result["computation_time"]
+        commit()
 
 
 # --------------------------------------------------------
@@ -357,12 +394,15 @@ def grid_search(config_dict, raw_dataset):
     print("This parameter set will require up to {} runs.".format(total_required_runs), file=sys.stderr)
     iter_counter = 0
     run_counter = 0
+
     # Actual search loop.
     for epochs in epochs_list:
         for training_window in training_window_list:
             for forecast_length in forecast_length_list:
                 for prediction_gap in prediction_gap_list:
-                    # Implicit else:
+                    # Create a new pool for each parameter set.
+                    # We can then parallelize over however many runs are needed.
+                    p = Pool()
                     # Query database to see if we have data from enough runs.
                     # Note: If the `with` statement is too slow, we can
                     #   use the `@db_session` decorator on a function
@@ -381,29 +421,19 @@ def grid_search(config_dict, raw_dataset):
                                           and r.finished)
                     # Not enough runs? We can fix that.
                     if row_count < num_runs_per_parameter_set:
-                        with db_session:
-                            # Insert an unfinished row for now. We'll update it later.
-                            record = Result(author=author,
-                                            dataset=dataset,
-                                            downsample_factor=downsample_factor,
-                                            layers=cannonicalize(layers),
-                                            activations=cannonicalize(activations),
-                                            epochs=epochs,
-                                            training_window=training_window,
-                                            forecast_length=forecast_length,
-                                            prediction_gap=prediction_gap,
-                                            finished=False)
-                            commit()  # Ensure we flush the record to disk.
-                            # Run the model with the provided parameters.
-                            result = run_model(raw_dataset, layers, activations, epochs, training_window, forecast_length, prediction_gap, use_gpu=False, want_verbose=False, online=False)
-                            # Now we update the row.
-                            record.finished = True
-                            record.rmse_global = result["rmse_global"]
-                            commit()
-                            # Provide occasional status messages so that the user doesn't think the job is hung up.
-                            run_counter += 1
-                            if run_counter % 1000 == 0:
-                                print("\nCompleted {} runs so far. At {}/{}".format(run_counter, iter_counter, total_required_runs), file=sys.stderr)
+                        # Print some debug info for the programmer.
+                        needed_runs = num_runs_per_parameter_set - row_count
+                        print("Spinning up {} instances".format(needed_runs), file=sys.stderr)
+                        # Generate the argument lists for each process.
+                        args_list = [raw_dataset, author, dataset, downsample_factor, layers, activations, epochs, training_window, forecast_length, prediction_gap]
+                        pool_work = [args_list for x in range(0, needed_runs)]
+                        # Farm out the work to the Pool.
+                        p.map(work_function, pool_work)
+                        # Close the Pool, and clean up the processes.
+                        p.close()
+                        p.join()
+                        if run_counter % 100 == 0 and run_counter > 0:
+                            print("\nCompleted {} runs so far. At {}/{}".format(run_counter, iter_counter, total_required_runs), file=sys.stderr)
                     iter_counter += 1
                     print('.', end='', file=sys.stderr)
                     sys.stderr.flush()

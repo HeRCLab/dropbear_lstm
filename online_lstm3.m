@@ -26,7 +26,7 @@ reuse_network = 1;
 hidden_size=20;
 
 % use homemade (low-level) training algorithm
-use_homemade = 1;
+use_homemade = 0;
 
 % epochs
 epochs=1;
@@ -43,13 +43,14 @@ phases=[0,0,0,0,0,0];
 
 % read Puga's signal
 %data=lvm_import('Ivol_Acc_Load_1S_1STD.lvm');
-%x = data.Segment1.data(:,1);
-%signal = data.Segment1.data(:,4)';
-%sample_rate = numel(data.Segment1.data(:,1))/data.Segment1.data(end,1);
+data=lvm_import('Ivol_Acc_Load_data1_w3_NSTD.lvm');
+x = data.Segment1.data(:,1);
+signal = data.Segment1.data(:,4)';
+sample_rate = numel(data.Segment1.data(:,1))/data.Segment1.data(end,1);
 
 % training parameters
-model_sample_rate = 200;
-prediction_time = 10;
+model_sample_rate = 500;
+prediction_time = 100;
 subsample = floor(sample_rate / model_sample_rate);
 
 % select network type
@@ -58,7 +59,7 @@ if strcmp(network_type,'lstm')
     numHiddenUnits = 10; % for LSTM
     history_length = 1;
 else
-    history_length = 10; % for MLP
+    history_length = 100; % for MLP
 end
 
 % synthesize subsampled signal
@@ -169,10 +170,11 @@ for i = 1:1:numel(signal_sub)-prediction_time-1-1
         % check if we want to use our home-made trainer
         if use_homemade
            if first_training
-               [mynet,output_from_mlp] = build_ann(x_train,y_train,[10],epochs);
+               %build_ann (x_train,y_train,neurons,epochs,alpha,varargin)
+               [mynet,output_from_mlp] = build_ann(x_train,y_train,[10],epochs,0.0001);
                first_training=0;
            else
-               [mynet,output_from_mlp] = build_ann(x_train,y_train,[10],epochs,mynet);
+               [mynet,output_from_mlp] = build_ann(x_train,y_train,[10],epochs,0.0001,mynet);
            end
         else
             % convert the training data into the necessary format for

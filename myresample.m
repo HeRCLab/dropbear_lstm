@@ -1,7 +1,7 @@
 function [resampled_x,resampled_y] = myresample(signal,sample_rate,subsample_rate)
 
     subsample_ratio = subsample_rate/sample_rate;
-    len_new = ceil(numel(signal) * subsample_ratio);
+    len_new = min([ceil(numel(signal) * subsample_ratio) numel(signal)-1]);
     resampled_x = single(zeros(1,len_new));
     resampled_y = single(zeros(1,len_new));
     

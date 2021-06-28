@@ -3,7 +3,8 @@ function [build_ann,pred,layers_from_matlab] = build_ann (x_train,y_train,neuron
 global deltas_output;
 
 if nargin==6
-    % we passed in a existing network
+    % we passed in a existing network, so update it
+    
     weights_hidden = varargin{1}.weights_hidden;
     bias_hidden = varargin{1}.bias_hidden;
     weights_output = varargin{1}.weights_output;
@@ -15,8 +16,6 @@ if nargin==6
         delta_hidden{1,i} = zeros(size(weights_hidden(i)));
     end
     delta_output = zeros(1,size(weights_output,1));
-
-    error_progression=zeros(1,epochs);
 
     for i=1:epochs
 
@@ -92,39 +91,23 @@ if nargin==6
       end
 
       deltas_output = [deltas_output,delta_output];
-      error_progression(1,i)=evaluate_net(weights_hidden,bias_hidden,weights_output,bias_output,x_train,y_train);
 
     end
 
     pred = out_output;
     
-% figure;
-% hold on;
-% plot([1:epochs],error_progression,':');
-% %plot([1:i],testing,'--');
-% title('Training Accuracy');
-% ylabel('RMSE');
-% xlabel('Epoch number');
-% legend('training error');
-
-
-    
-    
-    
-else
-    % we're building a new network
-    
-    % build a Matlab network
-    
+    % return updated network
+	build_ann.weights_hidden = weights_hidden;
+    build_ann.bias_hidden = bias_hidden;
+    build_ann.weights_output = weights_output;
+    build_ann.bias_output = bias_output;
+else    
     history_length = size(x_train,2);
     layers_from_matlab = [imageInputLayer([history_length,1,1],'Normalization','none')];
     for i=1:size(neurons,2)
         layers_from_matlab = [layers_from_matlab,fullyConnectedLayer(neurons(1,i))];
     end
     layers_from_matlab = [layers_from_matlab,fullyConnectedLayer(1),regressionLayer];
-    
-    
-    % build a homemade network
     
     % randomly initilize weights
     weights_hidden = cell(1,size(neurons,2));

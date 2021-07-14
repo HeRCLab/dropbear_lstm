@@ -42,7 +42,7 @@ if nargin==6
         % BACKWARD PASS
         % compute deltas for output layer
         delta_output=out_output-y_train(j,:);
-
+        
         % update the output weights
         for k=1:size(weights_output,1)
             weights_output(k,:) = weights_output(k,:) - alpha * delta_output(1,k) * out_hidden{size(neurons,2)};
@@ -101,11 +101,14 @@ if nargin==6
     build_ann.bias_hidden = bias_hidden;
     build_ann.weights_output = weights_output;
     build_ann.bias_output = bias_output;
-else    
+else
+    deltas_output = [];
     history_length = size(x_train,2);
     layers_from_matlab = [imageInputLayer([history_length,1,1],'Normalization','none')];
     for i=1:size(neurons,2)
         layers_from_matlab = [layers_from_matlab,fullyConnectedLayer(neurons(1,i))];
+        %layers_from_matlab = [layers_from_matlab,fullyConnectedLayer(neurons(1,i)) reluLayer];
+        %layers_from_matlab = [layers_from_matlab,fullyConnectedLayer(neurons(1,i)) tanhLayer];
     end
     layers_from_matlab = [layers_from_matlab,fullyConnectedLayer(1),regressionLayer];
     

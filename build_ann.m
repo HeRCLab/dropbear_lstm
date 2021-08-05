@@ -1,6 +1,14 @@
 function [build_ann,pred,layers_from_matlab] = build_ann (x_train,y_train,neurons,epochs,alpha,varargin)
 
-global deltas_output;
+% This function performs two possible tasks, depending on the nummber of
+% arguments given:
+% (1) if an existing neural network is given as the last argument, then
+% perform a backward pass and weight update
+% (2) otherwise, build a new neural network and return it, both in my own
+% object format and Matlab's own object format
+
+% note that if unless we're doing online training, then this function will
+% probably never be called.
 
 if nargin==6
     % we passed in a existing network, so update it
@@ -10,7 +18,9 @@ if nargin==6
     weights_output = varargin{1}.weights_output;
     bias_output = varargin{1}.bias_output;
     
-    % allocate deltas
+    % allocate deltas (gradients) for backward pass
+    % assume 'neurons' is the number of hidden neurons in each hidden layer
+    % (usually only one hidden layer)
     delta_hidden = cell(1,size(neurons,2));
     for i=1:size(neurons,2)
         delta_hidden{1,i} = zeros(size(weights_hidden(i)));

@@ -8,31 +8,34 @@ profile on
 sweep_precision = 0; % examine impact of fixed point precision
 sweep_history = 1; % examine impact of model size
 sweep_sample_rate = 0;
-online_training = 1; % train online or offline
-hidden_size = 100; % hidden layer on MLP, ignored for LSTM
+online_training = 1; % train online or offline (not supported for LSTM)
+hidden_size = 20; % hidden layer on MLP, ignored for LSTM
 prediction_time = 20; % forecast time
 alpha = .1; % learning rate
 lstm = 0; % use lstm?  otherwise use mlp
-backload_input_samples = 0;
+backload_input_samples = 0; % experimental: inteded for use of MLP for Vaheed data; not currently working
 subsample_input_signal = 1;
+num_lstm_layers = 2; % only for LSTM, ignored for MLPs
+weight_sparsity = .4; % only for LSTM, ignored for MLP
 
 % data settings
 use_synthetic_signal = 0;
 use_puja_signal = 1;
 delete_nonstationarity = 0;
 use_vaheed_signal = 0;
-nonstationarity_time = 9.775;
+nonstationarity_time = 9.775; % only for Puja, ignored for others
 
 % data format
-fixed_point = 1; % otherwise use float
+fixed_point = 1; % otherwise use float (not supported for LSTM: fix this!)
 
 % subsample by changing this to a fixed sample rate
+% ignored if subsample_input_signal == 0
 model_sample_rate = 2500;
 
 if online_training==1
     epochs = 1;
 else
-    epochs = 400;
+    epochs = 500;
 end
 
 if use_synthetic_signal
@@ -87,8 +90,8 @@ SNR_model = [];
 SNR_subsampling = [];
 
 % sweep parameters
-history_lengths = [25:25:250];
-precisions = [8];
+history_lengths = [50:25:250];
+precisions = [5];
 history_length = 50;
 sample_rates = 1250:3750:sample_rate;
 
@@ -206,13 +209,13 @@ for i=1:sweep_points
             end
             [mynet,pred,layers] = build_ann (training_batch_x,training_batch_y,[hidden_size],epochs,alpha);
         else
-            layers = [ ...
-                sequenceInputLayer(1)
-                lstmLayer(history_length)
-%                lstmLayer(history_length)
-%                lstmLayer(history_length)
-                fullyConnectedLayer(1)
-                regressionLayer];
+            layers = [ sequenceInputLayer(1) ];
+            
+            for layer = 1:num_lstm_layers
+                layers = [layers lstmLayer(history_length)];
+            end
+
+            layers = [layers fullyConnectedLayer(1) regressionLayer];
         end
 
          % training parameters
@@ -248,7 +251,12 @@ for i=1:sweep_points
         end
 
         if lstm == 1
-            [net,signal_pred] = predictAndUpdateState(net,train_x);
+            if weight_sparsity < 1
+                net_sparse = sparsify_net(net,weight_sparsity);
+            else
+                net_sparse = net;
+            end
+            [net,signal_pred] = predictAndUpdateState(net_sparse,train_x);
             % phase shift it!
             fill = zeros(1,prediction_time);
             signal_pred = [fill signal_pred(1,1:end-prediction_time-1)];
@@ -372,7 +380,11 @@ for i=1:sweep_points
         % fit errors starting at t=0
         model1 = fit(x1',half1',g);
         % start fitting the second error curve at t=0 (use x1)
-        model2 = fit(x1',half2',g);
+        model2 = fit(x1',half2',g,'Lower',[0,-Inf,0],'Upper',[Inf,0,100]);
+        
+        if model2.c < 0
+            1;
+        end
         
         % build error curves starting at t=0
         error_curve1 = model1.a-model1.b*exp(-model1.c.*x1);
@@ -380,7 +392,7 @@ for i=1:sweep_points
         error_curve2 = model2.a-model2.b*exp(-model2.c.*x1);
         %error_curve2 = model2.a.*x1+model2.b;
  
-        conv_rates = [conv_rates model2.c]
+        conv_rates = [conv_rates -model2.b/model2.c^2]
         
         signal1 = signal(1:half_signal_point);
         error_signal1 = error_signal(1:half_signal_point);
@@ -408,16 +420,17 @@ for i=1:sweep_points
     legend({'signal','predicted signal'});  
     xlabel('time');
     ylabel('accel');
-    title("predicted signal, history = "+history_length);
+    title("predicted signal, history = "+history_length+" samples");
     
     subplot (2,1,2);
     %plot(x,error_signal,'r');
     plot(x,error_signal_rms,'r');
     hold on;
     if online_training
-        plot(x1,error_curve1,'g');
+        %plot(x1,error_curve1,'g');
         plot(x2,error_curve2,'g');
-    	legend({'error signal rms','error curve1','error curve2'});
+    	%legend({'error signal rms','error curve1','error curve2'});
+        legend({'error signal rms','error fit'});
     else
         legend({'error signal rms'});
     end
@@ -505,11 +518,13 @@ if sweep_history
     end
     ylabel('SNR');
     
-    figure;
-    plot(x_vals ./ model_sample_rate .* 1000,1./conv_rates .* 1000);
-    title('Convergence time after nonstationarity');
-    xlabel('model history length (ms)');
-    ylabel('convergence time (ms)');
+    if online_training
+        figure;
+        plot(x_vals ./ model_sample_rate .* 1000,conv_rates .* 1000);
+        title('Convergence time after nonstationarity');
+        xlabel('model history length (ms)');
+        ylabel('convergence time (ms)');
+    end
     
     if online_training
         figure

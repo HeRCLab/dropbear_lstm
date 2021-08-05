@@ -67,16 +67,9 @@ function [net,signal_pred] = mypredictAndUpdateState(net,train_x)
 
             hidden_state = output_gate .* tanh(cell_state);
 
+            % forward pass
             signal_pred(1,i) = fully_connected_weights * hidden_state + fully_connected_bias;
         end
     
-%         close all;
-%         plot(train_x,'b');
-%         hold on;
-%         plot(signal_pred,'r');
-%         legend({'train\_y','signal\_pred'});
-%         hold off;
-%         pause;
-        
     end
 end

@@ -21,18 +21,13 @@ opts = trainingOptions('adam', ...
 train_x = signal(1,1:end-19);
 train_y = signal(1,20:end);
 
-error_power = rms(signal_pred - signal(1,20:end));
-signal_power = rms(signal);
+%net = trainNetwork(train_x,train_y,layers,opts);
 
-snr = log10(signal_power/error_power)*20
-
-net = trainNetwork(train_x,train_y,layers,opts);
+[net_updated,signal_pred] = mypredictAndUpdateState2(net,train_x);
 
 error_power = rms(signal_pred - signal(1,20:end));
 signal_power = rms(signal);
 snr = log10(signal_power/error_power)*20
-
-[net_updated,signal_pred] = predictAndUpdateState(net,train_x);
 
 close all;
 plot(train_y,'b');

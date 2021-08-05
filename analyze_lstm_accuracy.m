@@ -1,6 +1,6 @@
 % these are the main parameters to adjust
 % num_lstm_layers = number of LSTM cells
-num_lstm_layers = 2;
+num_lstm_layers = 1;
 
 % weight_sparsity = the percentage of recurrent weights that should remain
 % after sparsification
@@ -123,4 +123,4 @@ hold on;
 legend({'accuracy'});
 xlabel('units per cell');
 ylabel('SNR (dB)');
-title("LSTM with "+num_lstm_layers+" layers and "+units(end)+" units per layer with compression = "+weight_sparsity);
+title("LSTM with "+num_lstm_layers+" layers with compression = "+weight_sparsity);

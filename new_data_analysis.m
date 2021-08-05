@@ -8,25 +8,25 @@ profile on
 sweep_precision = 0; % examine impact of fixed point precision
 sweep_history = 1; % examine impact of model size
 sweep_sample_rate = 0;
-online_training = 1; % train online or offline (not supported for LSTM)
+online_training = 0; % train online or offline (not supported for LSTM)
 hidden_size = 20; % hidden layer on MLP, ignored for LSTM
 prediction_time = 20; % forecast time
 alpha = .1; % learning rate
-lstm = 0; % use lstm?  otherwise use mlp
+lstm = 1; % use lstm?  otherwise use mlp
 backload_input_samples = 0; % experimental: inteded for use of MLP for Vaheed data; not currently working
-subsample_input_signal = 1;
+subsample_input_signal = 0;
 num_lstm_layers = 2; % only for LSTM, ignored for MLPs
 weight_sparsity = .4; % only for LSTM, ignored for MLP
 
 % data settings
 use_synthetic_signal = 0;
-use_puja_signal = 1;
+use_puja_signal = 0;
 delete_nonstationarity = 0;
-use_vaheed_signal = 0;
+use_vaheed_signal = 1;
 nonstationarity_time = 9.775; % only for Puja, ignored for others
 
 % data format
-fixed_point = 1; % otherwise use float (not supported for LSTM: fix this!)
+fixed_point = 0; % otherwise use float (not supported for LSTM: fix this!)
 
 % subsample by changing this to a fixed sample rate
 % ignored if subsample_input_signal == 0

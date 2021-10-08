@@ -3,6 +3,8 @@ function [net,signal_pred] = mypredictAndUpdateState2(net,train_x)
     hidden_states = {};
     cell_states = {};
     
+    signal_pred=zeros(size(train_x));
+    
     % allocate hidden and cell states for all LSTM layers
 	for i = 1:size(net.Layers,1)
         layer = net.Layers(i);
@@ -18,14 +20,14 @@ function [net,signal_pred] = mypredictAndUpdateState2(net,train_x)
     for i = 1:size(train_x,2)
         x = train_x(1,i);
         n = 1;
-        for i = 1:size(net.Layers,1)
-            layer = net.Layers(i);
+        for j = 1:size(net.Layers,1)
+            layer = net.Layers(j);
             if strcmp(class(layer),'nnet.cnn.layer.LSTMLayer')
                 [cell_states{n},hidden_states{n}] = lstm_forward(cell_states{n},hidden_states{n},layer,x);
                 x = hidden_states{n};
                 n = n+1;
             elseif strcmp(class(layer),'nnet.cnn.layer.FullyConnectedLayer')
-                signal_pred(1,i) = fully_connected_weights * hidden_state{n} + fully_connected_bias;
+                signal_pred(1,i) = fully_connected_weights * hidden_states{n-1} + fully_connected_bias;
             end
         end
     end

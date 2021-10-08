@@ -8,11 +8,11 @@ profile on
 sweep_precision = 0; % examine impact of fixed point precision
 sweep_history = 1; % examine impact of model size
 sweep_sample_rate = 0;
-online_training = 0; % train online or offline (not supported for LSTM)
-hidden_size = 20; % hidden layer on MLP, ignored for LSTM
-prediction_time = 20; % forecast time
+online_training = 1; % train online or offline (not supported for LSTM)
+hidden_size = 50; % hidden layer on MLP, ignored for LSTM
+prediction_time = 40; % forecast time
 alpha = .1; % learning rate
-lstm = 1; % use lstm?  otherwise use mlp
+lstm = 0; % use lstm?  otherwise use mlp
 backload_input_samples = 0; % experimental: inteded for use of MLP for Vaheed data; not currently working
 subsample_input_signal = 0;
 num_lstm_layers = 2; % only for LSTM, ignored for MLPs
@@ -20,9 +20,9 @@ weight_sparsity = .4; % only for LSTM, ignored for MLP
 
 % data settings
 use_synthetic_signal = 0;
-use_puja_signal = 0;
+use_puja_signal = 1;
 delete_nonstationarity = 0;
-use_vaheed_signal = 1;
+use_vaheed_signal = 0;
 nonstationarity_time = 9.775; % only for Puja, ignored for others
 
 % data format
@@ -30,7 +30,7 @@ fixed_point = 0; % otherwise use float (not supported for LSTM: fix this!)
 
 % subsample by changing this to a fixed sample rate
 % ignored if subsample_input_signal == 0
-model_sample_rate = 2500;
+model_sample_rate = 12500;
 
 if online_training==1
     epochs = 1;
@@ -91,7 +91,9 @@ SNR_subsampling = [];
 
 % sweep parameters
 history_lengths = [50:25:250];
-precisions = [5];
+history_lengths = 400;
+
+precisions = [8];
 history_length = 50;
 sample_rates = 1250:3750:sample_rate;
 
@@ -153,7 +155,7 @@ for i=1:sweep_points
     error_power = rms(error_signal)^2;
     if error_power > 0
         signal_power = rms(signal)^2;
-        subsample_snr = [subsample_snr log10(signal_power / error_power) * 20];    
+        subsample_snr = [subsample_snr log10(signal_power / error_power) * 20]
     end
     
     % initialize network for low-level trainer
@@ -168,7 +170,16 @@ for i=1:sweep_points
     else
         training_samples = numel(signal_sub);
     end
-    training_batch_x = zeros(training_samples,history_length);
+    
+    if lstm==0
+        training_batch_x = zeros(training_samples,history_length);
+    end
+    
+    if lstm==1
+        training_samples = numel(signal_sub)-prediction_time;
+        training_batch_x = zeros(training_samples,1);
+    end
+    
     training_batch_y = zeros(training_samples,1);
 
     % allocate and zero-pad predicted signal
@@ -380,7 +391,7 @@ for i=1:sweep_points
         % fit errors starting at t=0
         model1 = fit(x1',half1',g);
         % start fitting the second error curve at t=0 (use x1)
-        model2 = fit(x1',half2',g,'Lower',[0,-Inf,0],'Upper',[Inf,0,100]);
+        model2 = fit(x1',half2',g,'Lower',[0,-Inf,0],'Upper',[Inf,0,Inf]);
         
         if model2.c < 0
             1;

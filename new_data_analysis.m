@@ -5,18 +5,26 @@ close all;
 profile on
 
 % parameters
+
+% sweep (chose only one)
 sweep_precision = 0; % examine impact of fixed point precision
 sweep_history = 1; % examine impact of model size
 sweep_sample_rate = 0;
+
+% fundamental settings
 online_training = 1; % train online or offline (not supported for LSTM)
+lstm = 0; % use lstm?  otherwise use mlp
+weight_sparsity = .4; % only for LSTM, ignored for MLP
+backload_input_samples = 0; % experimental: inteded for use of MLP for Vaheed data; not currently working
+
+% topology, prediction horizon, learning rate
 hidden_size = 50; % hidden layer on MLP, ignored for LSTM
 prediction_time = 40; % forecast time
 alpha = .1; % learning rate
-lstm = 0; % use lstm?  otherwise use mlp
-backload_input_samples = 0; % experimental: inteded for use of MLP for Vaheed data; not currently working
-subsample_input_signal = 0;
 num_lstm_layers = 2; % only for LSTM, ignored for MLPs
-weight_sparsity = .4; % only for LSTM, ignored for MLP
+
+% input data preprocessing
+subsample_input_signal = 0;
 
 % data settings
 use_synthetic_signal = 0;

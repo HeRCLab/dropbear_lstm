@@ -21,7 +21,7 @@ opts = trainingOptions('adam', ...
 train_x = signal(1,1:end-19);
 train_y = signal(1,20:end);
 
-%net = trainNetwork(train_x,train_y,layers,opts);
+net = trainNetwork(train_x,train_y,layers,opts);
 
 [net_updated,signal_pred] = mypredictAndUpdateState2(net,train_x);
 

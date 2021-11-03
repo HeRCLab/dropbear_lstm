@@ -100,7 +100,7 @@ if nargin==6
 
       end
 
-      deltas_output = [deltas_output,delta_output];
+      %deltas_output = [deltas_output,delta_output];
 
     end
 

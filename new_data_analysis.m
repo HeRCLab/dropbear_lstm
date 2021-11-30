@@ -11,6 +11,15 @@ sweep_precision = 0; % examine impact of fixed point precision
 sweep_history = 1; % examine impact of model size
 sweep_sample_rate = 0;
 
+% sweep parameters
+history_lengths = [300:50:500];
+precisions = [8];
+sample_rates = 1250:1250:5000;
+
+% setting for baseline approach
+fft_window = 128; % in samples
+fft_step = 1; % in samples
+
 % fundamental settings
 online_training = 1; % train online or offline (not supported for LSTM)
 lstm = 0; % use lstm?  otherwise use mlp
@@ -24,7 +33,7 @@ alpha = .1; % learning rate
 num_lstm_layers = 2; % only for LSTM, ignored for MLPs
 
 % input data preprocessing
-subsample_input_signal = 0;
+subsample_input_signal = 1;
 
 % data settings
 use_synthetic_signal = 0;
@@ -34,11 +43,11 @@ use_vaheed_signal = 0;
 nonstationarity_time = 9.775; % only for Puja, ignored for others
 
 % data format
-fixed_point = 0; % otherwise use float (not supported for LSTM: fix this!)
+fixed_point = 1; % otherwise use float (not supported for LSTM: fix this!)
 
 % subsample by changing this to a fixed sample rate
 % ignored if subsample_input_signal == 0
-model_sample_rate = 12500;
+model_sample_rate = 1250;
 
 if online_training==1
     epochs = 1;
@@ -91,20 +100,56 @@ else
     [x_sub,signal_sub] = myresample(signal,sample_rate,model_sample_rate);
 end
 
+% plot spectum of signal
+spectrum = fft(signal_sub(floor(numel(signal_sub)/2):end));
+spectrum = spectrum(1:floor(numel(spectrum)/2));
+spectrum = abs(spectrum);
+freqs = (1:numel(spectrum)) .* ((model_sample_rate/2)/numel(spectrum));
+plot(freqs,spectrum);
+hold on;
+xlabel('Hz');
+ylabel('Power');
+title('Spectrum of subsampled input signal');
+hold off;
+
+% apply Puja approach
+
+% compute size of output
+num_samples = numel(signal_sub);
+% allocate output
+signal_pred_puja = zeros(size(signal_sub));
+for i = fft_window:fft_step:num_samples-fft_window+1
+    % compute fft
+	the_fft = fft(signal_sub(i-fft_window+1:i));
+	% use ifft to predict next window
+    the_ifft = ifft(the_fft);
+    the_ifft = the_ifft(prediction_time:end);
+	signal_pred_puja(i:i+fft_window-prediction_time) = the_ifft;
+end
+
+% phase shift
+signal_pred_puja = [zeros(1,prediction_time-3),signal_pred_puja(1:end-prediction_time+3)];
+
+hold off;
+plot(x_sub(1:numel(signal_sub)),signal_sub);
+hold on;
+plot(x_sub(1:numel(signal_pred_puja)),signal_pred_puja);
+xlabel('time (s)');
+legend({'original subsampled','puja prediction'});
+
+hold off;
+figure;
+error = signal_sub(1:numel(signal_pred_puja)) - signal_pred_puja;
+plot(x_sub(1:numel(error)),error);
+title('error');
+drawnow;
+
 % seed RNG
 rng(42);
 
+% results
 SNR_model = [];
 SNR_subsampling = [];
-
-% sweep parameters
-history_lengths = [50:25:250];
-history_lengths = 400;
-
-precisions = [8];
-history_length = 50;
-sample_rates = 1250:3750:sample_rate;
-
 model_snr = [];
 subsample_snr = [];
 conv_points = [];

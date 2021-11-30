@@ -23,6 +23,7 @@ train_y = signal(1,20:end);
 
 net = trainNetwork(train_x,train_y,layers,opts);
 
+%[net_updated,signal_pred] = mypredictAndUpdateState2(net,train_x);
 [net_updated,signal_pred] = mypredictAndUpdateState2(net,train_x);
 
 error_power = rms(signal_pred - signal(1,20:end));

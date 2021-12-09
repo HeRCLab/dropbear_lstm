@@ -4,6 +4,10 @@
 close all;
 profile on
 
+% turn off warnings about curving fitting start points and lack thereof
+warning('off','curvefit:fit:noStartPoint');
+warning('off','curvefit:fit:nonDoubleYData');
+
 % parameters
 
 % sweep (chose only one)
@@ -28,7 +32,7 @@ backload_input_samples = 0; % experimental: inteded for use of MLP for Vaheed da
 
 % topology, prediction horizon, learning rate
 hidden_size = 50; % hidden layer on MLP, ignored for LSTM
-prediction_time = 40; % forecast time
+prediction_time = 1; % forecast time
 alpha = .1; % learning rate
 num_lstm_layers = 2; % only for LSTM, ignored for MLPs
 
@@ -100,49 +104,7 @@ else
     [x_sub,signal_sub] = myresample(signal,sample_rate,model_sample_rate);
 end
 
-% plot spectum of signal
-spectrum = fft(signal_sub(floor(numel(signal_sub)/2):end));
-spectrum = spectrum(1:floor(numel(spectrum)/2));
-spectrum = abs(spectrum);
-freqs = (1:numel(spectrum)) .* ((model_sample_rate/2)/numel(spectrum));
-plot(freqs,spectrum);
-hold on;
-xlabel('Hz');
-ylabel('Power');
-title('Spectrum of subsampled input signal');
-hold off;
-
-% apply Puja approach
-
-% compute size of output
-num_samples = numel(signal_sub);
-% allocate output
-signal_pred_puja = zeros(size(signal_sub));
-for i = fft_window:fft_step:num_samples-fft_window+1
-    % compute fft
-	the_fft = fft(signal_sub(i-fft_window+1:i));
-	% use ifft to predict next window
-    the_ifft = ifft(the_fft);
-    the_ifft = the_ifft(prediction_time:end);
-	signal_pred_puja(i:i+fft_window-prediction_time) = the_ifft;
-end
-
-% phase shift
-signal_pred_puja = [zeros(1,prediction_time-3),signal_pred_puja(1:end-prediction_time+3)];
-
-hold off;
-plot(x_sub(1:numel(signal_sub)),signal_sub);
-hold on;
-plot(x_sub(1:numel(signal_pred_puja)),signal_pred_puja);
-xlabel('time (s)');
-legend({'original subsampled','puja prediction'});
-
-hold off;
-figure;
-error = signal_sub(1:numel(signal_pred_puja)) - signal_pred_puja;
-plot(x_sub(1:numel(error)),error);
-title('error');
-drawnow;
+perform_fft_forecast (x,x_sub,signal,signal_sub,model_sample_rate,fft_window,fft_step,prediction_time,nonstationarity_time);
 
 % seed RNG
 rng(42);
@@ -662,22 +624,3 @@ end
     % end
     % close(writerObj);
 
-
-
-function signal = myzoh (x,x_sub,signal_in)
-    
-    signal = zeros(1,size(x,2));
-    
-    i_sub = 1;
-        
-    for i=1:size(x,2)
-        signal(1,i) = signal_in(1,i_sub);
-        
-        while (x(1,i) >= x_sub(1,i_sub)) && (i_sub<size(signal_in,2))
-            i_sub = i_sub+1;
-        end
-        
-        
-    end
-
-end

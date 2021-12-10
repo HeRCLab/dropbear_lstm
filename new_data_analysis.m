@@ -16,15 +16,15 @@ sweep_history = 1; % examine impact of model size
 sweep_sample_rate = 0;
 
 % sweep parameters
-history_lengths = [300:50:500];
+history_lengths = [500:100:1000];
 precisions = [8];
 sample_rates = 1250:1250:5000;
 
 % setting for baseline approach
-fft_window = 128; % in samples
+fft_window = 1024; % in samples
 fft_step = 1; % in samples
 
-% fundamental settings
+% ML settings
 online_training = 1; % train online or offline (not supported for LSTM)
 lstm = 0; % use lstm?  otherwise use mlp
 weight_sparsity = .4; % only for LSTM, ignored for MLP
@@ -32,7 +32,7 @@ backload_input_samples = 0; % experimental: inteded for use of MLP for Vaheed da
 
 % topology, prediction horizon, learning rate
 hidden_size = 50; % hidden layer on MLP, ignored for LSTM
-prediction_time = 1; % forecast time
+prediction_time = 50; % forecast time
 alpha = .1; % learning rate
 num_lstm_layers = 2; % only for LSTM, ignored for MLPs
 
@@ -47,7 +47,7 @@ use_vaheed_signal = 0;
 nonstationarity_time = 9.775; % only for Puja, ignored for others
 
 % data format
-fixed_point = 1; % otherwise use float (not supported for LSTM: fix this!)
+fixed_point = 0; % otherwise use float (not supported for FFT and LSTM: fix this!)
 
 % subsample by changing this to a fixed sample rate
 % ignored if subsample_input_signal == 0
@@ -98,13 +98,23 @@ time_offset = x(1);
 if subsample_input_signal==0
     x_sub = x;
     signal_sub = signal;
+    model_sample_rate = sample_rate;
+    signal_sub_zoh = signal;
 else
     sample_period = 1/model_sample_rate;
     subsample = floor(sample_rate / model_sample_rate);
     [x_sub,signal_sub] = myresample(signal,sample_rate,model_sample_rate);
+    signal_sub_zoh = myzoh(x,x_sub,signal_sub);error_signal = signal - signal_sub_zoh;
+    
+    % compute subsample SNR
+    error_power = rms(error_signal)^2;
+    signal_power = rms(signal)^2;
+    subsample_snr = log10(signal_power / error_power) * 20
 end
 
-perform_fft_forecast (x,x_sub,signal,signal_sub,model_sample_rate,fft_window,fft_step,prediction_time,nonstationarity_time);
+perform_fft_forecast (x,x_sub,signal,signal_sub,model_sample_rate,fft_window,fft_step,fft_window,nonstationarity_time);
+
+%return;
 
 % seed RNG
 rng(42);
@@ -124,7 +134,7 @@ elseif sweep_sample_rate
     sweep_points = numel(sample_rates);
 end
 
-conv_rates = [];
+conv_times = [];
 conv_snrs1 = [];
 conv_snrs2 = [];
 
@@ -418,7 +428,7 @@ for i=1:sweep_points
         error_curve2 = model2.a-model2.b*exp(-model2.c.*x1);
         %error_curve2 = model2.a.*x1+model2.b;
  
-        conv_rates = [conv_rates -model2.b/model2.c^2]
+        conv_times = [conv_times -model2.b/model2.c^2]
         
         signal1 = signal(1:half_signal_point);
         error_signal1 = error_signal(1:half_signal_point);
@@ -546,7 +556,7 @@ if sweep_history
     
     if online_training
         figure;
-        plot(x_vals ./ model_sample_rate .* 1000,conv_rates .* 1000);
+        plot(x_vals ./ model_sample_rate .* 1000,conv_times .* 1000);
         title('Convergence time after nonstationarity');
         xlabel('model history length (ms)');
         ylabel('convergence time (ms)');

@@ -16,12 +16,12 @@ sweep_history = 1; % examine impact of model size
 sweep_sample_rate = 0;
 
 % sweep parameters
-history_lengths = [500:100:1000];
+history_lengths = [1000:100:2000];
 precisions = [8];
 sample_rates = 1250:1250:5000;
 
 % setting for baseline approach
-fft_window = 1024; % in samples
+fft_window = 2048; % in samples
 fft_step = 1; % in samples
 
 % ML settings
@@ -51,7 +51,7 @@ fixed_point = 0; % otherwise use float (not supported for FFT and LSTM: fix this
 
 % subsample by changing this to a fixed sample rate
 % ignored if subsample_input_signal == 0
-model_sample_rate = 1250;
+model_sample_rate = 20000;
 
 if online_training==1
     epochs = 1;
@@ -104,7 +104,8 @@ else
     sample_period = 1/model_sample_rate;
     subsample = floor(sample_rate / model_sample_rate);
     [x_sub,signal_sub] = myresample(signal,sample_rate,model_sample_rate);
-    signal_sub_zoh = myzoh(x,x_sub,signal_sub);error_signal = signal - signal_sub_zoh;
+    signal_sub_zoh = myzoh(x,x_sub,signal_sub);
+    error_signal = signal - signal_sub_zoh;
     
     % compute subsample SNR
     error_power = rms(error_signal)^2;
@@ -416,7 +417,8 @@ for i=1:sweep_points
         % fit errors starting at t=0
         model1 = fit(x1',half1',g);
         % start fitting the second error curve at t=0 (use x1)
-        model2 = fit(x1',half2',g,'Lower',[0,-Inf,0],'Upper',[Inf,0,Inf]);
+        %model2 = fit(x1',half2',g,'Lower',[0,-Inf,0],'Upper',[Inf,0,Inf]);
+        model2 = fit(x1',half2',g,'Lower',[0,-1e-4,0],'Upper',[Inf,0,1e4]);
         
         if model2.c < 0
             1;
@@ -430,11 +432,11 @@ for i=1:sweep_points
  
         conv_times = [conv_times -model2.b/model2.c^2]
         
-        signal1 = signal(1:half_signal_point);
+        signal1 = signal_pred_zoh(1:half_signal_point);
         error_signal1 = error_signal(1:half_signal_point);
         conv_snrs1 = [conv_snrs1 log10(rms(signal1)^2/rms(error_signal1)^2)*20]
         
-        signal2 = signal(half_signal_point+1:end);
+        signal2 = signal_pred_zoh(half_signal_point+1:end);
         error_signal2 = error_signal(half_signal_point+1:end);
         conv_snrs2 = [conv_snrs2 log10(rms(signal2)^2/rms(error_signal2)^2)*20]
         

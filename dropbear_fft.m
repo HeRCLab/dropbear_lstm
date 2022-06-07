@@ -1,7 +1,8 @@
-window_size = 0.1;
-sample_rate = 5000;
 MLP = 0;
 LSTM = 1;
+
+window_size = 0.5;
+sample_rate = 2000;
 epochs = 50;
 mlp_hidden_neurons = 50;
 lstm_units = 10;

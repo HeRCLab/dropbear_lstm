@@ -1,11 +1,11 @@
 MLP = 0;
 LSTM = 1;
 
-window_size = 0.5;
+window_size = 0.1;
 sample_rate = 2000;
 epochs = 50;
 mlp_hidden_neurons = 50;
-lstm_units = 10;
+lstm_units = 40;
 
 % read data and compute sample rates
 data = jsondecode(fileread('data_6_with_FFT.json'));

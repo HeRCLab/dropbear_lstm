@@ -3,16 +3,17 @@ function signal_pred_puja = perform_fft_forecast (x,x_sub,signal,signal_sub,mode
     detrend = 0;
 
     % plot spectum of signal
-    spectrum = fft(signal_sub);
-    spectrum = spectrum(1:floor(numel(spectrum)/2));
-    spectrum = abs(spectrum);
-    freqs = (1:numel(spectrum)) .* ((model_sample_rate/2)/numel(spectrum));
-    plot(freqs,spectrum);
-    hold on;
-    xlabel('Hz');
-    ylabel('Power');
-    title('Spectrum of subsampled input signal');
-    hold off;
+%     figure;
+%     spectrum = fft(signal_sub);
+%     spectrum = spectrum(1:floor(numel(spectrum)/2));
+%     spectrum = abs(spectrum);
+%     freqs = (1:numel(spectrum)) .* ((model_sample_rate/2)/numel(spectrum));
+%     plot(freqs,spectrum);
+%     hold on;
+%     xlabel('Hz');
+%     ylabel('Power (dB)');
+%     title('Spectrum of subsampled input signal');
+%     hold off;
 
     % apply Puja approach
 
@@ -140,47 +141,45 @@ function signal_pred_puja = perform_fft_forecast (x,x_sub,signal,signal_sub,mode
     % error of prediction at native sample rate and subsample rate
     % only calculate SNR for after nonstationarity (second half)
     
-    error_sub = signal_sub(1:numel(signal_pred_puja)) - signal_pred_puja;
-    error = signal_pred_puja_zoh - signal;
-
-    % isolate the portion of the signal after the nonstationarity
-    half_signal_point = find(x>=nonstationarity_time);
-    half_signal_point = half_signal_point(1);
-    
-    half_signal_point_sub = find(x_sub>=nonstationarity_time);
-    half_signal_point_sub = half_signal_point_sub(1);
-    
-    error_power = rms(error(half_signal_point+1:end))^2;
-    error_sub_power = rms(error_sub(half_signal_point_sub+1:end))^2;
-    
-    % calculate SNR of Puja approach vs original signal
-    signal_power = rms(signal_pred_puja_zoh(half_signal_point+1:end))^2;
-    signal_sub_power = rms(signal_pred_puja(half_signal_point_sub+1:end))^2;
-        
-    puja_snr = log10(signal_power / error_power) * 20
-    puja_sub_snr = log10(signal_sub_power / error_sub_power) * 20
-    
-    % plot errors
-    figure;
-    plot(x_sub,error_sub(1:numel(x_sub)));
-    hold on;
-    title('error');
-    xlabel('time (s)');
-    legend({'error vs subsampled'});
-    drawnow;
-
-    % plot errors
-    figure;
-    plot(x,error);
-    hold on;
-    title('error');
-    xlabel('time (s)');
-    legend({'error vs original'});
-    drawnow;
-
-    
-
-    % calculate convergence time of Puja approach vs original signal
-    [~,conv_time] = get_accuracy_stats (x,signal,signal_pred_puja_zoh,error,nonstationarity_time,1)
+%     error_sub = signal_sub(1:numel(signal_pred_puja)) - signal_pred_puja;
+%     error = signal_pred_puja_zoh - signal;
+% 
+%     % isolate the portion of the signal after the nonstationarity
+%     half_signal_point = find(x>=nonstationarity_time);
+%     half_signal_point = half_signal_point(1);
+%     
+%     half_signal_point_sub = find(x_sub>=nonstationarity_time);
+%     half_signal_point_sub = half_signal_point_sub(1);
+%     
+%     error_power = rms(error(half_signal_point+1:end))^2;
+%     error_sub_power = rms(error_sub(half_signal_point_sub+1:end))^2;
+%     
+%     % calculate SNR of Puja approach vs original signal
+%     signal_power = rms(signal_pred_puja_zoh(half_signal_point+1:end))^2;
+%     signal_sub_power = rms(signal_pred_puja(half_signal_point_sub+1:end))^2;
+%         
+%     puja_snr = log10(signal_power / error_power) * 20
+%     puja_sub_snr = log10(signal_sub_power / error_sub_power) * 20
+%     
+% %     % plot errors
+% %     figure;
+% %     plot(x_sub,error_sub(1:numel(x_sub)));
+% %     hold on;
+% %     title('FFT error (subsampled)');
+% %     xlabel('time (s)');
+% %     legend({'error vs subsampled'});
+% %     drawnow;
+% % 
+% %     % plot errors
+% %     figure;
+% %     plot(x,error);
+% %     hold on;
+% %     title('FFT error (original)');
+% %     xlabel('time (s)');
+% %     legend({'error vs original'});
+% %     drawnow;
+% 
+%   % calculate convergence time of Puja approach vs original signal
+%     [~,conv_time] = get_accuracy_stats (x,signal,signal_pred_puja_zoh,error,nonstationarity_time,0,"FFT-Based Results, $N$="+fft_window)
 
 end

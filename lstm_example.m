@@ -8,6 +8,7 @@ sample_rate = numel(x)/time_span;
 time_offset = x(1);
 
 layers = [sequenceInputLayer(1) lstmLayer(50) lstmLayer(50) fullyConnectedLayer(1) regressionLayer];
+layers = [sequenceInputLayer(1) lstmLayer(400) fullyConnectedLayer(1) regressionLayer];
 
 opts = trainingOptions('adam', ...
     'MaxEpochs',500, ...

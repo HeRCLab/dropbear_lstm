@@ -1,38 +1,45 @@
 % this script is my sandbox for testing low-level and online training
 
 % close plots and clear data from previous run
-close all;
-profile on
+%close all;
+
+%close all;
+%clear all;
+
+%for precisions = [8,7,6,5,4]
 
 % turn off warnings about curving fitting start points and lack thereof
 warning('off','curvefit:fit:noStartPoint');
 warning('off','curvefit:fit:nonDoubleYData');
 
-% parameters
+% for plots
+fontsize = 20;
 
 % sweep (chose only one)
 sweep_precision = 0; % examine impact of fixed point precision
 sweep_history = 1; % examine impact of model size
-sweep_sample_rate = 0;
+sweep_sample_rate = 0; % examine impact of history size
 
 % sweep parameters
-history_lengths = [1000:100:2000];
-precisions = [8];
+history_lengths = [10e-3:10e-3:100e-3];
+precisions = [4];
 sample_rates = 1250:1250:5000;
 
+% subsample by changing this to a fixed sample rate
+% ignored if subsample_input_signal == 0
+model_sample_rate = 10000;
+
 % setting for baseline approach
-fft_window = 2048; % in samples
+fft_window_seconds = 1e-1; % in seconds; the period of the signal
 fft_step = 1; % in samples
 
 % ML settings
 online_training = 1; % train online or offline (not supported for LSTM)
 lstm = 0; % use lstm?  otherwise use mlp
-weight_sparsity = .4; % only for LSTM, ignored for MLP
-backload_input_samples = 0; % experimental: inteded for use of MLP for Vaheed data; not currently working
 
 % topology, prediction horizon, learning rate
 hidden_size = 50; % hidden layer on MLP, ignored for LSTM
-prediction_time = 50; % forecast time
+prediction_time_seconds = 40e-3; % forecast time in seconds
 alpha = .1; % learning rate
 num_lstm_layers = 2; % only for LSTM, ignored for MLPs
 
@@ -42,16 +49,13 @@ subsample_input_signal = 1;
 % data settings
 use_synthetic_signal = 0;
 use_puja_signal = 1;
-delete_nonstationarity = 0;
 use_vaheed_signal = 0;
+
+delete_nonstationarity = 0;
 nonstationarity_time = 9.775; % only for Puja, ignored for others
 
 % data format
 fixed_point = 0; % otherwise use float (not supported for FFT and LSTM: fix this!)
-
-% subsample by changing this to a fixed sample rate
-% ignored if subsample_input_signal == 0
-model_sample_rate = 20000;
 
 if online_training==1
     epochs = 1;
@@ -74,6 +78,7 @@ elseif use_puja_signal
     %data=lvm_import('Ivol_Acc_Load_1S_1STD.lvm');
     %data=lvm_import('Ivol_Acc_Load_data1_w3_NSTD.lvm');
     data=lvm_import('data_set_3.lvm');
+    %data=lvm_import('new_data_sets/Test 1.lvm');
     x = data.Segment1.data(:,1)';
     signal = data.Segment1.data(:,4)';
     if delete_nonstationarity
@@ -113,7 +118,12 @@ else
     subsample_snr = log10(signal_power / error_power) * 20
 end
 
-perform_fft_forecast (x,x_sub,signal,signal_sub,model_sample_rate,fft_window,fft_step,fft_window,nonstationarity_time);
+% compute the prediction (forecase time) in samples
+prediction_time = ceil(prediction_time_seconds * model_sample_rate);
+
+% compute the FFT window (forecase time) in samples
+%fft_window = ceil(fft_window_seconds * model_sample_rate);
+%perform_fft_forecast (x,x_sub,signal,signal_sub,model_sample_rate,fft_window,fft_step,fft_window,nonstationarity_time);
 
 %return;
 
@@ -151,7 +161,7 @@ for i=1:sweep_points
 
         % compute error signal
         error_signal = signal - signal_sub_zoh;
-        history_length = history_lengths(1);
+        history_length = ceil(history_lengths(1) * model_sample_rate);
     elseif sweep_history
         wordsize = precisions(1);
         fractionsize = wordsize-1;
@@ -159,11 +169,11 @@ for i=1:sweep_points
         % compute error signal
         signal_sub_zoh = myzoh(x,x_sub,signal_sub);
         error_signal = signal - signal_sub_zoh;
-        history_length = history_lengths(i);
+        history_length = ceil(history_lengths(i) * model_sample_rate);
     elseif sweep_sample_rate
         model_sample_rate = sample_rates(i);
         % hold history constant, based on original subsampling rate
-        history_length = ceil(history_lengths(1) * sample_rates(i) / sample_rates(1))
+        history_length = ceil(history_lengths(1) * model_sample_rate)
         if model_sample_rate == sample_rate
             x_sub = x;
             signal_sub = signal;
@@ -187,15 +197,7 @@ for i=1:sweep_points
     % initialize network for low-level trainer
     first_training = 1;
 
-    % allocate training set for offline model
-    % if backload is enabled, we predict the first observed input and
-    % assume that all the corresponding inputs are 0 (note this only
-    % applies to MLP
-    if backload_input_samples==0 || lstm==1
-        training_samples = numel(signal_sub)-history_length-prediction_time+1;
-    else
-        training_samples = numel(signal_sub);
-    end
+    training_samples = numel(signal_sub)-history_length-prediction_time+1;
     
     if lstm==0
         training_batch_x = zeros(training_samples,history_length);
@@ -339,32 +341,7 @@ for i=1:sweep_points
             index = i+history_length+prediction_time-1;
             signal_pred(1,index)=prediction;
 
-%             % handle all the plotting
-%             if mod(i,1000)==0
-%                 % plot
-%                 time_axis = 0:(size(signal_pred,2)-1);
-%                 time_axis = time_axis ./ model_sample_rate + time_offset;
-% 
-%                 % plot the actual and predicted signal
-%                 subplot(2,1,1);
-%                 plot(time_axis,signal_sub(1,1:size(signal_pred,2)),'b');
-%                 hold on;
-%                 plot(time_axis,signal_pred,'r');
-%                 legend ('signal (actual)','signal (predicted)','Location','southeast');
-% 
-%                 subplot(2,1,2);
-%                 % plot the cumulative RMS error
-%                 rmse = zeros(1,size(signal_pred,2));
-%                 for i=1:size(signal_pred,2)
-%                     rmse(1,i) = mean((double(signal_pred(1,1:i)) - signal_sub(1,1:i)).^2)^.5;
-%                 end
-%                 
-%                 plot(time_axis,rmse(1,1:size(time_axis,2)),'r');
-%                 legend ({'cumulative RMS error'},'Location','southeast');
-%                 title('cumulative RMS error');
-%                 %rmse(1,end)
-%                 drawnow;
-%             end
+
           end
          
 
@@ -396,88 +373,12 @@ for i=1:sweep_points
     error_signal_rms = (error_signal .^ 2) .^ .5;
     
     if online_training
-        % model the error before and after the nonstationarity
-        g = fittype('a-b*exp(-c*x)');
-        %g = fittype('a*x+b');
-        
-        % split the time scale
-        half_signal_point = find(x>=nonstationarity_time);
-        half_signal_point = half_signal_point(1);
-        x1 = x(1:half_signal_point);
-        x2 = x(half_signal_point+1:end);
-        
-        % split the error signal
-        half1 = error_signal_rms(1:half_signal_point);
-        half2 = error_signal_rms(half_signal_point+1:end);
-        
-        % assume x2 has more points, so trim error
-        x2 = x2(1:numel(x1));
-        half2 = half2(1:numel(x1));
-        
-        % fit errors starting at t=0
-        model1 = fit(x1',half1',g);
-        % start fitting the second error curve at t=0 (use x1)
-        %model2 = fit(x1',half2',g,'Lower',[0,-Inf,0],'Upper',[Inf,0,Inf]);
-        model2 = fit(x1',half2',g,'Lower',[0,-1e-4,0],'Upper',[Inf,0,1e4]);
-        
-        if model2.c < 0
-            1;
-        end
-        
-        % build error curves starting at t=0
-        error_curve1 = model1.a-model1.b*exp(-model1.c.*x1);
-        %error_curve1 = model1.a.*x1+model1.b;
-        error_curve2 = model2.a-model2.b*exp(-model2.c.*x1);
-        %error_curve2 = model2.a.*x1+model2.b;
- 
-        conv_times = [conv_times -model2.b/model2.c^2]
-        
-        signal1 = signal_pred_zoh(1:half_signal_point);
-        error_signal1 = error_signal(1:half_signal_point);
-        conv_snrs1 = [conv_snrs1 log10(rms(signal1)^2/rms(error_signal1)^2)*20]
-        
-        signal2 = signal_pred_zoh(half_signal_point+1:end);
-        error_signal2 = error_signal(half_signal_point+1:end);
-        conv_snrs2 = [conv_snrs2 log10(rms(signal2)^2/rms(error_signal2)^2)*20]
-        
+        [snr,conv_time] = get_accuracy_stats (x,signal,signal_pred_zoh,error_signal_rms,nonstationarity_time,0,history_length,"MLP-Based Model with $h$="+history_length);
+        conv_times = [conv_times conv_time]
+        %conv_snrs1 = [conv_snrs1 log10(rms(signal1)^2/rms(error_signal1)^2)*20]
+        conv_snrs2 = [conv_snrs2 snr]
         model_snr
-        
-%         conv_point = -log(-.01/(model.b*model.c))/model.c;
-%         conv_error = model.a-model.b*exp(-model.c.*conv_point);
-%         conv_samples = conv_error * model_sample_rate;
-%         conv_points = [conv_points conv_point];
     end
-    
-    % plot signal and error
-    figure;
-    subplot (2,1,1);
-    plot(x,signal,'b');
-    hold on;
-    plot(x,signal_pred_zoh,'r');
-    %plot(x,error_smooth,'g');
-    legend({'signal','predicted signal'});  
-    xlabel('time');
-    ylabel('accel');
-    title("predicted signal, history = "+history_length+" samples");
-    
-    subplot (2,1,2);
-    %plot(x,error_signal,'r');
-    plot(x,error_signal_rms,'r');
-    hold on;
-    if online_training
-        %plot(x1,error_curve1,'g');
-        plot(x2,error_curve2,'g');
-    	%legend({'error signal rms','error curve1','error curve2'});
-        legend({'error signal rms','error fit'});
-    else
-        legend({'error signal rms'});
-    end
-    
-    xlabel('time');
-    ylabel('accel');
-    title("predicted signal, history = "+history_length);
-    hold off;
-    drawnow;
 end
     
 % float
@@ -507,122 +408,127 @@ deploy.latency = [];
 % plot SNR results
 
 %x_vals = history_lengths./model_sample_rate;
+
+% find the x-axis (depends on what parameter is being swept)
 if sweep_precision
     x_vals = precisions;
 elseif sweep_history
-    x_vals = history_lengths;
+    %x_vals = history_lengths ./ model_sample_rate .* 1000;
+    x_vals = history_lengths .* 1000;
 elseif sweep_sample_rate
     x_vals = sample_rates;
 end
 
-figure;
-
-% plot subsampling SNR
-% only plot subsampling error if subsampling was performed
-if ~isempty(subsample_snr)
-    plot(x_vals,subsample_snr,'r--');
+% FIGURE 1: overall SNR
+if ~exist('snr_fig','var')
+    snr_fig=figure;
+    % plot subsampling SNR
+    % only plot subsampling error if subsampling was performed
+    if ~isempty(subsample_snr)
+        plot(x_vals,subsample_snr,'r--','DisplayName','subsampling SNR');
+    end
+else
+    figure(snr_fig);
 end
-
 hold on;
+
+if ~fixed_point
+        display_name = hidden_size+" hidden neurons";
+        if hidden_size==10
+           plotopts = 'rs-';
+        elseif hidden_size==20
+           plotopts = 'gd-';
+        elseif hidden_size==30
+            plotopts = 'b^-';
+        elseif hidden_size==40
+            plotopts = 'mv-';
+        else
+            plotopts = 'cx-';
+        end
+    else
+        display_name = wordsize+" bits";
+        if wordsize==4
+           plotopts = 'rs-';
+        elseif wordsize==5
+            plotopts = 'gd-';
+        elseif wordsize==6
+            plotopts = 'b^-';
+        elseif wordsize==7
+            plotopts = 'mv-';
+        else
+            plotopts = 'cx-';
+        end
+    end
+
 % plot model SNR
-plot(x_vals,model_snr,'go-');
+plot(x_vals,model_snr,plotopts,'DisplayName',display_name,'MarkerSize',12,'MarkerFaceColor',plotopts(1));
+%lines = findobj(gca,'Type','line');
+%lines(1).MarkerFaceColor=lines(end).Color;
+    
+title('Overall model SNR','interpreter','latex');
+xlabel('$h/r_s$ (ms)','interpreter','latex');
+ylabel('SNR (dB)','interpreter','latex');
+set(gca,'FontSize',fontsize);
+set(gca,'TickLabelInterpreter','latex');
+legend('interpreter','latex');
+
+
 %ylim([0 18]);
 %xlim([0.0025 0.045]);
 
-if sweep_history
+% FIGURE 2: retraining time
     
-    % print costs if available
-    if ~isempty(deploy.DSP)
-        for i=1:numel(history_lengths)
-            gstr = sprintf("%d%% DSP\n%d%% LUT\n%d%% FF,\nlatency %d ns",deploy.DSP(i),...
-                                                                deploy.LUT(i),...
-                                                                deploy.FF(i),...
-                                                                deploy.latency(i));
-            %plot(x_vals(i),model_snr(i),'r.');
-            text(x_vals(i),model_snr(i)-1,gstr);
+if online_training
+    if ~exist('retraining_fig','var')
+        retraining_fig=figure;
+    else
+        figure(retraining_fig);
+    end
+    hold on;
+
+    if ~fixed_point
+        display_name = hidden_size+" hidden neurons";
+        if hidden_size==10
+           plotopts = 'rs-';
+        elseif hidden_size==20
+           plotopts = 'gd-';
+        elseif hidden_size==30
+            plotopts = 'b^-';
+        elseif hidden_size==40
+            plotopts = 'mv-';
+        else
+            plotopts = 'cx-';
+        end
+    else
+        display_name = wordsize+" bits";
+        if wordsize==4
+           plotopts = 'rs-';
+        elseif wordsize==5
+            plotopts = 'gd-';
+        elseif wordsize==6
+            plotopts = 'b^-';
+        elseif wordsize==7
+            plotopts = 'mv-';
+        else
+            plotopts = 'cx-';
         end
     end
     
-    if ~isempty(subsample_snr)
-        legend({'subsampling SNR','model SNR'});
-    else
-        legend({'model SNR'});
-    end
-
-    if ~lstm
-        xlabel('model history length');
-    else
-        xlabel('number of units');
-    end
-    ylabel('SNR');
+    plot(x_vals,conv_times .* 1e3,plotopts,'DisplayName',display_name,'MarkerSize',12,'MarkerFaceColor',plotopts(1));
+    %lines = findobj(gca,'Type','line');
+    %lines(end).MarkerFaceColor=lines(end).Color;
     
-    if online_training
-        figure;
-        plot(x_vals ./ model_sample_rate .* 1000,conv_times .* 1000);
-        title('Convergence time after nonstationarity');
-        xlabel('model history length (ms)');
-        ylabel('convergence time (ms)');
-    end
-    
-    if online_training
-        figure
-        plot(x_vals ./ model_sample_rate .* 1000,conv_snrs2);
-        title('SNR after converging on nonstationarity');
-        xlabel('model history length (ms)');
-        ylabel('SNR (dB)');
-    end
-    
-elseif sweep_precision
-
-    % print costs if available
-    if ~isempty(deploy.DSP)
-        for i=1:numel(precisions)
-            gstr = sprintf("%d%% DSP\n%d%% LUT\n%d%% FF,\nlatency %d ns",deploy.DSP(i),...
-                                                                deploy.LUT(i),...
-                                                                deploy.FF(i),...
-                                                                deploy.latency(i));
-            %plot(x_vals(i),model_snr(i),'r.');
-            text(x_vals(i),model_snr(i)-2,gstr);
-        end
-    end
-    
-    if ~isempty(subsample_snr)
-        legend({'subsampling SNR','model SNR'});
-    else
-        legend({'model SNR'});
-    end
-    
-    %xlabel('model history length');
-    xlabel('fixed point precision');
-    ylabel('SNR');
-    xlim([-1,11]);
-    
-elseif sweep_sample_rate
-
-    % print costs if available
-    if ~isempty(deploy.DSP)
-        for i=1:numel(precisions)
-            gstr = sprintf("%d%% DSP\n%d%% LUT\n%d%% FF,\nlatency %d ns",deploy.DSP(i),...
-                                                                deploy.LUT(i),...
-                                                                deploy.FF(i),...
-                                                                deploy.latency(i));
-            %plot(x_vals(i),model_snr(i),'r.');
-            text(x_vals(i),model_snr(i)-2,gstr);
-        end
-    end
-    
-    if ~isempty(subsample_snr)
-        legend({'subsampling SNR','model SNR'});
-    else
-        legend({'model SNR'});
-    end
-    
-    %xlabel('model history length');
-    xlabel('model sample rate');
-    ylabel('SNR');
-    xlim([-1,11]);
+    title('Retraining time','interpreter','latex');
+    xlabel('$h/r_s$ (ms)','interpreter','latex');
+    ylabel('retraining time (ms)','interpreter','latex');
+    set(gca,'FontSize',fontsize);
+    set(gca,'TickLabelInterpreter','latex');
+    legend('interpreter','latex');
 end
 
+hold off;
+
+%end
 
 
     % writerObj = VideoWriter('myVideo.mp4','MPEG-4');%VideoCompressionMethod,'H.264');

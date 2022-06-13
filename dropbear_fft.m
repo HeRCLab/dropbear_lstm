@@ -1,11 +1,14 @@
-MLP = 0;
-LSTM = 1;
+MLP = 1;
+LSTM = 0;
 
-window_size = 0.1;
-sample_rate = 5000;
-epochs = 100;
+train_start = 0;
+train_end = 60;
 
-mlp_hidden_neurons = 50;
+window_size = 1; % seconds
+sample_rate = 1000;
+epochs = 50;
+
+mlp_hidden_neurons = 1000;
 lstm_units = 10;
 
 % read data and compute sample rates
@@ -41,22 +44,33 @@ vibration_signal_sub = vibration_signal_sub(1,1:signal_length);
 x_sub = x_sub(1,1:signal_length);
 pin_position_resamp = pin_position_resamp(1,1:signal_length);
 
+% extract training portion
+start_sample = find(x_sub>train_start);
+start_sample = start_sample(1);
+end_sample = find(x_sub<train_end);
+end_sample = end_sample(end);
+x_sub_train = x_sub(start_sample:end_sample);
+vibration_signal_sub_train = vibration_signal_sub(start_sample:end_sample);
+pin_position_resamp_train = pin_position_resamp(start_sample:end_sample);
+
 % compute fft window size in samples
-fft_window = ceil(window_size * pin_sample_rate);
+fft_window = ceil(window_size * sample_rate);
 
 % allocate memory
 vibration_signal_sub_fft = zeros(fft_window,size(vibration_signal_sub,2));
 
-% compute FFT
+% compute FFT (full dataset)
 for i=fft_window:size(vibration_signal_sub,2)
     vibration_signal_sub_fft(:,i) = abs(fft(vibration_signal_sub(1,i-fft_window+1:i)));
 end
+
+vibration_signal_sub_fft_train = vibration_signal_sub_fft(:,start_sample:end_sample);
 
 % training options
 opts = trainingOptions('sgdm', ...
     'MaxEpochs',epochs, ...
     'GradientThreshold',1, ...
-    'InitialLearnRate',0.01, ...
+    'InitialLearnRate',0.1, ...
     'LearnRateSchedule','piecewise', ...
     'LearnRateDropPeriod',50, ...
     'LearnRateDropFactor',0.1, ...
@@ -64,27 +78,59 @@ opts = trainingOptions('sgdm', ...
 
 % build NN
 if MLP
-    layers = [imageInputLayer([fft_window,1,1]) fullyConnectedLayer(mlp_hidden_neurons) tanhLayer fullyConnectedLayer(mlp_hidden_neurons) tanhLayer fullyConnectedLayer(1) regressionLayer];
+    layers = [imageInputLayer([fft_window,1,1])...
+                fullyConnectedLayer(mlp_hidden_neurons) tanhLayer...
+                fullyConnectedLayer(mlp_hidden_neurons) tanhLayer...
+                fullyConnectedLayer(1) regressionLayer];
     % allocate training data
-    train_x = zeros(fft_window,1,1,size(vibration_signal_sub_fft,2));
+    train_x = zeros(fft_window,1,1,size(vibration_signal_sub_fft_train,2));
 
     % organize training data
     for i=1:size(train_x,4)
-        train_x(:,1,1,i) = vibration_signal_sub_fft(:,i);
+        train_x(:,1,1,i) = vibration_signal_sub_fft_train(:,i);
     end
     
-    net = trainNetwork(train_x,pin_position_resamp',layers,opts);
+    net = trainNetwork(train_x,pin_position_resamp_train',layers,opts);
 end
 
 if LSTM
-    layers = [sequenceInputLayer(size(vibration_signal_sub_fft,1)) lstmLayer(lstm_units) lstmLayer(lstm_units) fullyConnectedLayer(1) regressionLayer];
-    train_x = vibration_signal_sub_fft;
-    net = trainNetwork(train_x,pin_position_resamp,layers,opts);
+    layers = [sequenceInputLayer(size(vibration_signal_sub_fft_train,1)) lstmLayer(lstm_units) lstmLayer(lstm_units) fullyConnectedLayer(1) regressionLayer];
+    train_x = vibration_signal_sub_fft_train;
+    net = trainNetwork(train_x,pin_position_resamp_train_train_train,layers,opts);
 end
 
 %%
-pin_position_pred = predict(net,train_x);
 
+% predict training data
+pin_position_pred_train = predict(net,train_x);
+
+% plot train
+figure
+hold on;
+plot(x_sub_train,pin_position_resamp_train,'r');
+plot(x_sub_train,pin_position_pred_train,'b');
+legend({'actual','predicted'});
+xlabel('time');
+
+% repackage data to predict full dataset
+if MLP
+    % allocate training data
+    test_x = zeros(fft_window,1,1,size(vibration_signal_sub_fft,2));
+
+    % organize training data
+    for i=1:size(test_x,4)
+        test_x(:,1,1,i) = vibration_signal_sub_fft(:,i);
+    end
+end
+
+if LSTM
+    test_x = vibration_signal_sub_fft;
+end
+
+% predict full data
+pin_position_pred = predict(net,test_x);
+
+% plot full
 figure
 hold on;
 plot(x_sub,pin_position_resamp,'r');
@@ -92,10 +138,5 @@ plot(x_sub,pin_position_pred,'b');
 legend({'actual','predicted'});
 xlabel('time');
 
-if MLP
-    rmse = mean((pin_position_resamp'-pin_position_pred).^2)^.5
-end
-
-if LSTM
-    rmse = mean((pin_position_resamp-pin_position_pred).^2)^.5
-end
+rmse_full = mean((pin_position_resamp_train'-pin_position_pred_train).^2)^.5
+rmse_full = mean((pin_position_resamp'-pin_position_pred).^2)^.5

@@ -1,12 +1,12 @@
-MLP = 1;
-LSTM = 0;
+MLP = 0;
+LSTM = 1;
 
 train_start = 0;
 train_end = 60;
 
-window_size = 1; % seconds
-sample_rate = 1000;
-epochs = 50;
+window_size = .5; % seconds
+sample_rate = 2000;
+epochs = 200;
 
 mlp_hidden_neurons = 1000;
 lstm_units = 10;
@@ -72,7 +72,7 @@ opts = trainingOptions('sgdm', ...
     'GradientThreshold',1, ...
     'InitialLearnRate',0.1, ...
     'LearnRateSchedule','piecewise', ...
-    'LearnRateDropPeriod',50, ...
+    'LearnRateDropPeriod',200, ...
     'LearnRateDropFactor',0.1, ...
     'Verbose',true);
 
@@ -96,7 +96,7 @@ end
 if LSTM
     layers = [sequenceInputLayer(size(vibration_signal_sub_fft_train,1)) lstmLayer(lstm_units) lstmLayer(lstm_units) fullyConnectedLayer(1) regressionLayer];
     train_x = vibration_signal_sub_fft_train;
-    net = trainNetwork(train_x,pin_position_resamp_train_train_train,layers,opts);
+    net = trainNetwork(train_x,pin_position_resamp_train,layers,opts);
 end
 
 %%
@@ -138,5 +138,13 @@ plot(x_sub,pin_position_pred,'b');
 legend({'actual','predicted'});
 xlabel('time');
 
-rmse_full = mean((pin_position_resamp_train'-pin_position_pred_train).^2)^.5
-rmse_full = mean((pin_position_resamp'-pin_position_pred).^2)^.5
+%%
+if MLP
+    rmse_full = mean((pin_position_resamp_train'-pin_position_pred_train).^2)^.5
+    rmse_full = mean((pin_position_resamp'-pin_position_pred).^2)^.5
+end
+
+if LSTM
+    rmse_full = mean((pin_position_resamp_train-pin_position_pred_train).^2)^.5
+    rmse_full = mean((pin_position_resamp-pin_position_pred).^2)^.5
+end

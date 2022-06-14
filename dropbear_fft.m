@@ -11,6 +11,8 @@ epochs = 200;
 mlp_hidden_neurons = 1000;
 lstm_units = 10;
 
+use_my_predict = 1;
+
 % read data and compute sample rates
 data = jsondecode(fileread('data_6_with_FFT.json'));
 vibration_sample_rate = numel(data.acceleration_data) / (data.time_acceleration_data(end) - data.time_acceleration_data(1));
@@ -102,7 +104,11 @@ end
 %%
 
 % predict training data
-pin_position_pred_train = predict(net,train_x);
+if use_my_predict
+    [net,pin_position_pred_train,cell_states,hidden_states] = mypredictAndUpdateState2(net,train_x)
+else
+    pin_position_pred_train = predict(net,train_x);
+end
 
 % plot train
 figure

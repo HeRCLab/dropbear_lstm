@@ -1,4 +1,4 @@
-function [net,signal_pred] = mypredictAndUpdateState2(net,train_x)
+function [net,signal_pred,cell_states,hidden_states] = mypredictAndUpdateState2(net,train_x)
 
     hidden_states = {};
     cell_states = {};

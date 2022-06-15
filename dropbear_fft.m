@@ -1,11 +1,11 @@
-MLP = 0;
-LSTM = 1;
+MLP = 1;
+LSTM = 0;
 
 train_start = 0;
 train_end = 60;
 
-window_size = .5; % seconds
-sample_rate = 2000;
+window_size = .1; % seconds
+sample_rate = 500;
 epochs = 200;
 
 mlp_hidden_neurons = 1000;
@@ -105,7 +105,7 @@ end
 
 % predict training data
 if use_my_predict
-    [net,pin_position_pred_train,cell_states,hidden_states] = mypredictAndUpdateState2(net,train_x)
+    [net,pin_position_pred_train,cell_states,hidden_states] = mypredictAndUpdateState2(net,train_x);
 else
     pin_position_pred_train = predict(net,train_x);
 end

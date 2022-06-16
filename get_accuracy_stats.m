@@ -1,7 +1,7 @@
-function [snr,conv_time] = get_accuracy_stats (x,signal,signal_pred_zoh,error,nt_time,plotit,h,title_prefix)
+function [snr,conv_time,a,b,c] = get_accuracy_stats (x,signal,signal_pred_zoh,error,nt_time,plotit,h,title_prefix)
     
     % parameters
-    fontsize = 14;
+    fontsize = 16;
         
     % SNR
     signal_power = rms(signal)^2;
@@ -49,12 +49,16 @@ function [snr,conv_time] = get_accuracy_stats (x,signal,signal_pred_zoh,error,nt
     %conv_time=-model2.b/model2.c^2;
     conv_time=-log(0.5)/model2.c;
     
+    a = model2.a;
+    b = -model2.b;
+    c = model2.c;    
+    
     if plotit
         % plot signal and error
         figure;
         subplot (2,1,1);
         plot(x,signal,'b');
-        xlim([9.6 10.5]);
+        xlim([9 9.05]);
         hold on;
         plot(x,signal_pred_zoh,'r');
         %plot(x,error_smooth,'g');

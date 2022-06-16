@@ -12,22 +12,25 @@
 warning('off','curvefit:fit:noStartPoint');
 warning('off','curvefit:fit:nonDoubleYData');
 
+% enable plotting
+plotit=1;
+
 % for plots
 fontsize = 20;
 
 % sweep (chose only one)
 sweep_precision = 0; % examine impact of fixed point precision
-sweep_history = 1; % examine impact of model size
-sweep_sample_rate = 0; % examine impact of history size
+sweep_history = 0; % examine impact of model size
+sweep_sample_rate = 1; % examine impact of history size
 
 % sweep parameters
-history_lengths = [10e-3:10e-3:100e-3];
+history_lengths = [100e-3];
 precisions = [4];
-sample_rates = 1250:1250:5000;
+sample_rates = 2500:2500:20000;
 
 % subsample by changing this to a fixed sample rate
 % ignored if subsample_input_signal == 0
-model_sample_rate = 10000;
+model_sample_rate = 12500;
 
 % setting for baseline approach
 fft_window_seconds = 1e-1; % in seconds; the period of the signal
@@ -116,10 +119,27 @@ else
     error_power = rms(error_signal)^2;
     signal_power = rms(signal)^2;
     subsample_snr = log10(signal_power / error_power) * 20
+    
+    % optionally plot the subsampling SNR
+    if plotit
+        fontsize = 14;
+        figure;
+        plot(x,signal,'b');
+        xlim([9 9.05]);
+        hold on;
+        plot(x,signal_sub_zoh,'r');
+        %plot(x,error_smooth,'g');
+        legend({'signal','subsampled'},'interpreter','latex');
+        xlabel('$t$','interpreter','latex');
+        %ylabel('acceleration','interpreter','latex');
+        title("$r_s$ = "+model_sample_rate,'interpreter','latex');
+        set(gca,'FontSize',fontsize);
+        set(gca,'TickLabelInterpreter','latex')
+    end
 end
 
 % compute the prediction (forecase time) in samples
-prediction_time = ceil(prediction_time_seconds * model_sample_rate);
+prediction_time = ceil(prediction_time_seconds * sample_rate);
 
 % compute the FFT window (forecase time) in samples
 %fft_window = ceil(fft_window_seconds * model_sample_rate);
@@ -148,6 +168,10 @@ end
 conv_times = [];
 conv_snrs1 = [];
 conv_snrs2 = [];
+snr_before_nonstationarity = [];
+a_vals = [];
+b_vals = [];
+c_vals = [];
 
 % outermost loop:  generate models for each sweep point
 for i=1:sweep_points
@@ -358,6 +382,7 @@ for i=1:sweep_points
     if ~lstm
         error_signal_snip = error_signal(history_length+prediction_time-1:end);
         signal_snip = signal(history_length+prediction_time-1:end);
+        x_snip = x(history_length+prediction_time-1:end);
     else
         error_signal_snip = error_signal;
         signal_snip = signal;
@@ -372,8 +397,18 @@ for i=1:sweep_points
     % comptue instantaneous RMS
     error_signal_rms = (error_signal .^ 2) .^ .5;
     
+    % SNR before non-stationarity
+    ns_sample = find(x_snip<nonstationarity_time);
+    ns_sample = ns_sample(end);
+    error_signal_before_nonstationarity = error_signal_snip(1:ns_sample);
+    signal_before_nonstationarity = signal_snip(1:ns_sample);
+    snr_before_nonstationarity = [snr_before_nonstationarity, log10(rms(signal_before_nonstationarity)^2 /...
+                                       rms(error_signal_before_nonstationarity)^2) * 20]
     if online_training
-        [snr,conv_time] = get_accuracy_stats (x,signal,signal_pred_zoh,error_signal_rms,nonstationarity_time,0,history_length,"MLP-Based Model with $h$="+history_length);
+        [snr,conv_time,a,b,c] = get_accuracy_stats (x,signal,signal_pred_zoh,error_signal_rms,nonstationarity_time,plotit,history_length,"MLP-Based Model with $h$="+history_length);
+        a_vals = [a_vals a];
+        b_vals = [b_vals b];
+        c_vals = [c_vals c];
         conv_times = [conv_times conv_time]
         %conv_snrs1 = [conv_snrs1 log10(rms(signal1)^2/rms(error_signal1)^2)*20]
         conv_snrs2 = [conv_snrs2 snr]

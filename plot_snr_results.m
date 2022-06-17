@@ -63,14 +63,16 @@ ax.XAxis.Exponent = 0;
 % re-training parameters
 figure;
 hold on;
+rs = [2500:2500:20000];
+h = plot (rs,b_vals+a_vals,'ro-');
 plot (rs,a_vals,'b+-');
-h = plot (rs,b_vals,'ro-');
 
-legend({'$a$','$-b$'},'interpreter','latex');
-title('Retraining parameters, $h/r_s$ = 100 ms','interpreter','latex');
+legend({'start error','end error'},'interpreter','latex');
+title('Retraining parameters, $h/r_s$ = 40 ms','interpreter','latex');
 xlabel('Subsample rate ($r_s$)','interpreter','latex');
 set(gca,'FontSize',fontsize);
 set(gca,'TickLabelInterpreter','latex');
+ylim([0 0.03]);
 ax = ancestor(h, 'axes');
 ax.XAxis.Exponent = 0;
 
@@ -79,12 +81,15 @@ ax.XAxis.Exponent = 0;
 % throughput requirement
 figure;
 hold on;
-rs = [2500:2500:50000];
+rs = [2500:2500:400000];
 wcet = 1./rs;
 h = rs * 100e-3;
 s = 50;
 ops = 2*(2*h*s+s+2*s+1)+3*h*s+3*s+2;
-p = plot (rs,ops./wcet/1e9,'b+-');
+%p = plot (rs,ops./wcet/1e9,'b+-');
+p = plot (rs,ops./wcet/1e9,'b-');
+plot(rs,8*64*4*2*ones(1,numel(rs)),'r-');
+plot(rs,6840*.4*2*ones(1,numel(rs)),'g-');
 
 %legend({'minimum ops/s'},'interpreter','latex');
 title('Performance requirement, $s$=50, $h/r_s$ = 100 ms','interpreter','latex');
@@ -100,13 +105,16 @@ ax.XAxis.Exponent = 0;
 % bandwidth requirement
 figure;
 hold on;
-rs = [2500:2500:50000];
+rs = [2500:2500:700000];
 wcet = 1./rs;
 h = rs * 100e-3;
 s = 50;
 ops = 2*(2*h*s+s+2*s+1)+3*h*s+3*s+2;
 bytes = 3*(h*s + s);
-p = plot (rs,bytes./wcet/1e9,'b+-');
+%p = plot (rs,bytes./wcet/1e9,'b+-');
+p = plot (rs,bytes./wcet/2^30,'b-');
+plot (rs,8*4e9*64/2^30*ones(1,numel(rs)),'r-');
+plot (rs,4320*4*400e6/2^30*ones(1,numel(rs)),'g-');
 
 %legend({'minimum ops/s'},'interpreter','latex');
 title('Bandwidth requirement (8-bit wordsize), $s$=50, $h/r_s$ = 100 ms','interpreter','latex');

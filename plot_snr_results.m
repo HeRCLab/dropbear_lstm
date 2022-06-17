@@ -94,3 +94,25 @@ set(gca,'FontSize',fontsize);
 set(gca,'TickLabelInterpreter','latex');
 ax = ancestor(p, 'axes');
 ax.XAxis.Exponent = 0;
+
+
+%%
+% bandwidth requirement
+figure;
+hold on;
+rs = [2500:2500:50000];
+wcet = 1./rs;
+h = rs * 100e-3;
+s = 50;
+ops = 2*(2*h*s+s+2*s+1)+3*h*s+3*s+2;
+bytes = 3*(h*s + s);
+p = plot (rs,bytes./wcet/1e9,'b+-');
+
+%legend({'minimum ops/s'},'interpreter','latex');
+title('Bandwidth requirement (8-bit wordsize), $s$=50, $h/r_s$ = 100 ms','interpreter','latex');
+xlabel('Subsample rate ($r_s$)','interpreter','latex');
+ylabel('GB/s','interpreter','latex');
+set(gca,'FontSize',fontsize);
+set(gca,'TickLabelInterpreter','latex');
+ax = ancestor(p, 'axes');
+ax.XAxis.Exponent = 0;

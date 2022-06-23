@@ -1,12 +1,8 @@
 % this script is my sandbox for testing low-level and online training
 
 % close plots and clear data from previous run
-%close all;
-
-%close all;
-%clear all;
-
-%for precisions = [8,7,6,5,4]
+close all;
+clear all;
 
 % turn off warnings about curving fitting start points and lack thereof
 warning('off','curvefit:fit:noStartPoint');
@@ -24,7 +20,7 @@ sweep_history = 0; % examine impact of model size
 sweep_sample_rate = 1; % examine impact of history size
 
 % sweep parameters
-history_lengths = [100e-3];
+history_lengths = [40e-3];
 precisions = [4];
 sample_rates = 2500:2500:20000;
 
@@ -396,6 +392,22 @@ for i=1:sweep_points
     model_snr = [model_snr,log10(signal_power / error_power) * 20]
     % comptue instantaneous RMS
     error_signal_rms = (error_signal .^ 2) .^ .5;
+    
+    if plotit
+        figure;
+        plot(x(1:end-prediction_time),signal(1:end-prediction_time),'r-');
+        hold on;
+        plot(x(1:end-prediction_time),signal_pred_zoh(prediction_time+1:end),'b-');
+        legend({'$V(t)$','$V_{forecast}(t-f/r_s)$'},'interpreter','latex');
+        title('$s$=50, $f/r_s$=40 ms','interpreter','latex');
+        xlabel('time','interpreter','latex');
+        %ylabel('$SNR_{db}$','interpreter','latex');
+        set(gca,'FontSize',fontsize);
+        set(gca,'TickLabelInterpreter','latex');
+        %ax = ancestor(h, 'axes');
+        %ax.XAxis.Exponent = 0;
+        hold off;
+    end
     
     % SNR before non-stationarity
     ns_sample = find(x_snip<nonstationarity_time);

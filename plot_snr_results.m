@@ -68,7 +68,7 @@ h = plot (rs,b_vals+a_vals,'ro-');
 plot (rs,a_vals,'b+-');
 
 legend({'start error','end error'},'interpreter','latex');
-title('Retraining parameters, $h/r_s$ = 40 ms','interpreter','latex');
+title('Retraining parameters, $h/r_s$ = 70 ms','interpreter','latex');
 xlabel('Subsample rate ($r_s$)','interpreter','latex');
 set(gca,'FontSize',fontsize);
 set(gca,'TickLabelInterpreter','latex');

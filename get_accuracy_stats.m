@@ -59,6 +59,7 @@ function [snr,conv_time,a,b,c] = get_accuracy_stats (x,signal,signal_pred_zoh,er
         subplot (2,1,1);
         plot(x,signal,'b');
         xlim([9 9.05]);
+        xlim([9.6 10.5]);
         hold on;
         plot(x,signal_pred_zoh,'r');
         %plot(x,error_smooth,'g');

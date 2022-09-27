@@ -6,7 +6,7 @@ train_end = 60;
 
 window_size = .1; % seconds
 sample_rate = 500;
-epochs = 500;
+epochs = 100;
 
 mlp_hidden_neurons = 1000;
 lstm_units = 10;

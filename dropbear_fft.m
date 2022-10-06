@@ -29,7 +29,7 @@ window_size = .1; % seconds
 sample_rate = 400;
 
 % choose training time
-epochs = 10;
+epochs = 50;
 
 %%
 % read data and compute sample rates

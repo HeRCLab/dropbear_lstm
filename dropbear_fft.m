@@ -12,11 +12,13 @@ mlp_hidden_neurons = 1000;
 num_mlp_hidden_layers = 5;
 
 % if LSTM, choose units/cell and number of cells
-lstm_units = 10;
-num_lstm_cells = 5;
+lstm_units = 50;
+num_lstm_cells = 4;
+training_snippet_size = 0.1;
+number_of_sequence_inputs = 1; % assuming no FFT
 
 % if LSTM, choose whether to use built-in or hand-written forward pass code
-use_my_predict = 1;
+use_my_predict = 0;
 
 % choose a portion of the signal on which to train
 train_start = 0;
@@ -29,7 +31,7 @@ window_size = .1; % seconds
 sample_rate = 400;
 
 % choose training time
-epochs = 50;
+epochs = 200;
 
 %%
 % read data and compute sample rates
@@ -91,13 +93,20 @@ if use_fft
     
 end
 
+% collate data if needed
+if number_of_sequence_inputs > 1
+    for i=1:(number_of_sequence_inputs-1)
+        vibration_signal_sub = [vibration_signal_sub;...
+                                vibration_signal_sub(1,(i+1):end) zeros(1,i)];
+    end
+end
+
 % training options
 opts = trainingOptions('sgdm', ...
     'MaxEpochs',epochs, ...
     'GradientThreshold',1, ...
     'InitialLearnRate',1e-3, ...
     'LearnRateSchedule','piecewise', ...
-    'Shuffle', 'every-epoch', ...
     'LearnRateDropPeriod',200, ...
     'LearnRateDropFactor',0.1, ...
     'Verbose',true);
@@ -146,7 +155,23 @@ if LSTM
     else
         train_x = vibration_signal_sub;
     end
-    net = trainNetwork(train_x,pin_position_resamp_train,layers,opts);
+    
+    % perform multiple passes to train this network (experimental)
+    % for now, assume that the chunks are not overlapping (TODO: try
+    % overlapping)
+    data_duration = size(train_x,2)/sample_rate;
+    number_of_chunks = floor(data_duration/training_snippet_size);
+    chunk_size = floor(size(train_x,2) / number_of_chunks);
+    for chunk=1:number_of_chunks
+        index_range = (chunk-1)*chunk_size+1:chunk*chunk_size;
+        fprintf("training chunk %d/%d (%d/%d samples)\n",chunk,number_of_chunks,numel(index_range),size(train_x,2));
+        
+        if chunk==1
+            net = trainNetwork(train_x(1,index_range),pin_position_resamp_train(1,index_range),layers,opts);
+        else
+            net = trainNetwork(train_x(1,index_range),pin_position_resamp_train(1,index_range),net.Layers,opts);
+        end
+    end
 end
 
 %%

@@ -14,7 +14,7 @@ num_mlp_hidden_layers = 5;
 % if LSTM, choose units/cell and number of cells
 lstm_units = 50;
 num_lstm_cells = 4;
-training_snippet_size = 0.1;
+training_snippet_size = 1;
 number_of_sequence_inputs = 1; % assuming no FFT
 
 % if LSTM, choose whether to use built-in or hand-written forward pass code

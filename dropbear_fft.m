@@ -14,8 +14,8 @@ num_mlp_hidden_layers = 5;
 % if LSTM, choose units/cell and number of cells
 lstm_units = 50;
 num_lstm_cells = 4;
-training_snippet_size = 1;
-number_of_sequence_inputs = 1; % assuming no FFT
+training_snippet_size = .2;
+number_of_sequence_inputs = 16; % assuming no FFT
 
 % if LSTM, choose whether to use built-in or hand-written forward pass code
 use_my_predict = 0;
@@ -167,9 +167,9 @@ if LSTM
         fprintf("training chunk %d/%d (%d/%d samples)\n",chunk,number_of_chunks,numel(index_range),size(train_x,2));
         
         if chunk==1
-            net = trainNetwork(train_x(1,index_range),pin_position_resamp_train(1,index_range),layers,opts);
+            net = trainNetwork(train_x(:,index_range),pin_position_resamp_train(:,index_range),layers,opts);
         else
-            net = trainNetwork(train_x(1,index_range),pin_position_resamp_train(1,index_range),net.Layers,opts);
+            net = trainNetwork(train_x(:,index_range),pin_position_resamp_train(:,index_range),net.Layers,opts);
         end
     end
 end

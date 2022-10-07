@@ -14,7 +14,7 @@ num_mlp_hidden_layers = 5;
 % if LSTM, choose units/cell and number of cells
 lstm_units = 50;
 num_lstm_cells = 4;
-training_snippet_size = .2;
+training_snippet_size = 2;
 number_of_sequence_inputs = 16; % assuming no FFT
 
 % if LSTM, choose whether to use built-in or hand-written forward pass code
@@ -31,7 +31,7 @@ window_size = .1; % seconds
 sample_rate = 400;
 
 % choose training time
-epochs = 200;
+epochs = 300;
 
 %%
 % read data and compute sample rates
@@ -159,9 +159,16 @@ if LSTM
     % perform multiple passes to train this network (experimental)
     % for now, assume that the chunks are not overlapping (TODO: try
     % overlapping)
+    
+    figure;
+    hold on;
+    plot(x_sub_train,pin_position_resamp_train,'r');
+    xlabel('time (s)');
+        
     data_duration = size(train_x,2)/sample_rate;
     number_of_chunks = floor(data_duration/training_snippet_size);
     chunk_size = floor(size(train_x,2) / number_of_chunks);
+    lineobjs = zeros(1,number_of_chunks);
     for chunk=1:number_of_chunks
         index_range = (chunk-1)*chunk_size+1:chunk*chunk_size;
         fprintf("training chunk %d/%d (%d/%d samples)\n",chunk,number_of_chunks,numel(index_range),size(train_x,2));
@@ -171,6 +178,12 @@ if LSTM
         else
             net = trainNetwork(train_x(:,index_range),pin_position_resamp_train(:,index_range),net.Layers,opts);
         end
+        
+        if lineobjs(chunk) ~= 0
+            delete(lineobjs(chunk));
+        end
+        lineobjs(chunk)=...
+            plot(x_sub_train(1:index_range),predict(net,pin_position_resamp_train(:,index_range)));
     end
 end
 

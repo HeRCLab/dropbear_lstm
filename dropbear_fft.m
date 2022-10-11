@@ -1,17 +1,37 @@
+% parameters
+
+% choose a network
 MLP = 0;
 LSTM = 1;
 
+% add an FFT front-end?
+use_fft = 0;
+
+% if MLP, choose MLP hidden layer size and number of hidden layers
+mlp_hidden_neurons = 1000;
+num_mlp_hidden_layers = 5;
+
+% if LSTM, choose units/cell and number of cells
+lstm_units = 50;
+num_lstm_cells = 4;
+training_snippet_size = 2;
+number_of_sequence_inputs = 16; % assuming no FFT
+
+% if LSTM, choose whether to use built-in or hand-written forward pass code
+use_my_predict = 0;
+
+% choose a portion of the signal on which to train
 train_start = 0;
 train_end = 60;
 
+% if so, choose a window size for FFT
 window_size = .1; % seconds
-sample_rate = 500;
-epochs = 100;
 
-mlp_hidden_neurons = 1000;
-lstm_units = 10;
-use_my_predict = 1;
-use_fft = 1;
+% choose a sample rate
+sample_rate = 400;
+
+% choose training time
+epochs = 300;
 
 %%
 % read data and compute sample rates
@@ -73,25 +93,35 @@ if use_fft
     
 end
 
+% collate data if needed
+if number_of_sequence_inputs > 1
+    for i=1:(number_of_sequence_inputs-1)
+        vibration_signal_sub = [vibration_signal_sub;...
+                                vibration_signal_sub(1,(i+1):end) zeros(1,i)];
+    end
+end
+
 % training options
 opts = trainingOptions('sgdm', ...
     'MaxEpochs',epochs, ...
     'GradientThreshold',1, ...
     'InitialLearnRate',1e-3, ...
     'LearnRateSchedule','piecewise', ...
-    'Shuffle', 'every-epoch', ...
     'LearnRateDropPeriod',200, ...
     'LearnRateDropFactor',0.1, ...
     'Verbose',true);
 
-    
-
 % build NN
 if MLP
-    layers = [imageInputLayer([fft_window,1,1])...
-                fullyConnectedLayer(mlp_hidden_neurons) tanhLayer...
-                fullyConnectedLayer(mlp_hidden_neurons) tanhLayer...
-                fullyConnectedLayer(1) regressionLayer];
+    
+    layers = [imageInputLayer([fft_window,1,1])];
+    
+    for i=1:num_mlp_hidden_layers
+        layers = [layers fullyConnectedLayer(mlp_hidden_neurons) tanhLayer];
+    end
+    
+    layers = [layers fullyConnectedLayer(1) regressionLayer];
+    
     % allocate training data
     train_x = zeros(fft_window,1,1,size(vibration_signal_sub_fft_train,2));
 
@@ -113,20 +143,48 @@ if LSTM
     else
         layers = [sequenceInputLayer(size(vibration_signal_sub,1))];
     end
+    
+    for i=1:num_lstm_cells
+        layers = [layers lstmLayer(lstm_units)];
+    end
         
-    layers = [layers lstmLayer(50)...
-                     lstmLayer(50)...
-                     lstmLayer(50)...
-                     lstmLayer(50)...
-                     fullyConnectedLayer(1)...
-                     regressionLayer];
+    layers = [layers fullyConnectedLayer(1) regressionLayer];
     
     if use_fft
         train_x = vibration_signal_sub_fft_train;
     else
         train_x = vibration_signal_sub;
     end
-    net = trainNetwork(train_x,pin_position_resamp_train,layers,opts);
+    
+    % perform multiple passes to train this network (experimental)
+    % for now, assume that the chunks are not overlapping (TODO: try
+    % overlapping)
+    
+    figure;
+    hold on;
+    plot(x_sub_train,pin_position_resamp_train,'r');
+    xlabel('time (s)');
+        
+    data_duration = size(train_x,2)/sample_rate;
+    number_of_chunks = floor(data_duration/training_snippet_size);
+    chunk_size = floor(size(train_x,2) / number_of_chunks);
+    lineobjs = zeros(1,number_of_chunks);
+    for chunk=1:number_of_chunks
+        index_range = (chunk-1)*chunk_size+1:chunk*chunk_size;
+        fprintf("training chunk %d/%d (%d/%d samples)\n",chunk,number_of_chunks,numel(index_range),size(train_x,2));
+        
+        if chunk==1
+            net = trainNetwork(train_x(:,index_range),pin_position_resamp_train(:,index_range),layers,opts);
+        else
+            net = trainNetwork(train_x(:,index_range),pin_position_resamp_train(:,index_range),net.Layers,opts);
+        end
+        
+        if lineobjs(chunk) ~= 0
+            delete(lineobjs(chunk));
+        end
+        lineobjs(chunk)=...
+            plot(x_sub_train(1:index_range),predict(net,pin_position_resamp_train(:,index_range)));
+    end
 end
 
 %%

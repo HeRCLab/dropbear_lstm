@@ -11,7 +11,7 @@ epochs = 100;
 mlp_hidden_neurons = 1000;
 lstm_units = 10;
 use_my_predict = 1;
-use_fft = 0;
+use_fft = 1;
 
 %%
 % read data and compute sample rates

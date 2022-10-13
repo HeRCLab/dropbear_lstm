@@ -18,7 +18,7 @@ num_lstm_cells = 4;
 % if LSTM, choose other training options
 training_snippet_size = 2;
 number_of_sequence_inputs = 16; % assuming no FFT
-number_of_training_rounds = 2; % number of passes over whole dataset
+number_of_training_rounds = 1; % number of passes over whole dataset
 use_higher_sample_rate_for_inputs = 1;
 
 % if LSTM, choose whether to use built-in or hand-written forward pass code
@@ -35,7 +35,7 @@ window_size = .1; % seconds
 sample_rate = 400;
 
 % choose training time
-epochs = 300;
+epochs = 500;
 
 %%
 % read data and compute sample rates
@@ -97,7 +97,7 @@ start_sample_vib = find(x_sub_vib>=train_start);
 start_sample_vib = start_sample_vib(1);
 end_sample_vib = find(x_sub_vib<train_end);
 end_sample_vib = end_sample_vib(end);
-x_sub_train = x_sub_vib(start_sample_vib:end_sample_vib);
+x_sub_train_vib = x_sub_vib(start_sample_vib:end_sample_vib);
 vibration_signal_sub_train = vibration_signal_sub(start_sample_vib:end_sample_vib);
 
 % extract training portion (pin)
@@ -105,9 +105,22 @@ start_sample_pin = find(x_sub_pin>=train_start);
 start_sample_pin = start_sample_pin(1);
 end_sample_pin = find(x_sub_pin<train_end);
 end_sample_pin = end_sample_pin(end);
-x_sub_train = x_sub_vib(start_sample_pin:end_sample_pin);
+x_sub_train_pin = x_sub_pin(start_sample_pin:end_sample_pin);
 pin_position_resamp_train = pin_position_resamp(start_sample_pin:end_sample_pin);
 
+% plot for sanity check
+figure;
+hold on;
+plot(x_sub_train_vib,vibration_signal_sub_train,'g');
+yyaxis right
+plot(x_sub_train_pin,pin_position_resamp_train,'r');
+title('training data');
+legend({"vibration","pin position"});
+xlabel('time (s)');
+hold off;
+drawnow;
+
+%%
 if use_fft
 
     % compute fft window size in samples
@@ -244,10 +257,10 @@ end
 % plot train
 figure
 hold on;
-plot(x_sub_train,pin_position_resamp_train,'r');
-plot(x_sub_train,pin_position_pred_train,'b');
+plot(x_sub_train_pin,pin_position_resamp_train,'r');
+plot(x_sub_train_pin,pin_position_pred_train,'b');
 legend({'actual','predicted'});
-xlabel('time');
+xlabel('time (s)');
 
 % repackage data to predict full dataset
 if MLP

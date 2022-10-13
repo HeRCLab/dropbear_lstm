@@ -16,7 +16,7 @@ lstm_units = 50;
 num_lstm_cells = 4;
 
 % if LSTM, choose other training options
-training_snippet_size = 1;
+training_snippet_size = 0.5;
 number_of_sequence_inputs = 16; % assuming no FFT
 number_of_training_rounds = 1; % number of passes over whole dataset
 use_higher_sample_rate_for_inputs = 1;
@@ -212,7 +212,7 @@ if LSTM
     
     figure;
     hold on;
-    plot(x_sub_train,pin_position_resamp_train,'r');
+    plot(x_sub_train_pin,pin_position_resamp_train,'r');
     xlabel('time (s)');
     
     % plot colors

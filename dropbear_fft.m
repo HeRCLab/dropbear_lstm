@@ -16,7 +16,7 @@ lstm_units = 50;
 num_lstm_cells = 4;
 
 % if LSTM, choose other training options
-training_snippet_size = 2;
+training_snippet_size = 1;
 number_of_sequence_inputs = 16; % assuming no FFT
 number_of_training_rounds = 1; % number of passes over whole dataset
 use_higher_sample_rate_for_inputs = 1;
@@ -294,11 +294,12 @@ end
 % predict full data
 pin_position_pred = predict(net,test_x);
 
+%%
 % plot full
 figure
 hold on;
-plot(x_sub,pin_position_resamp,'r');
-plot(x_sub,pin_position_pred,'b');
+plot(x_sub_pin,pin_position_resamp,'r');
+plot(x_sub_pin,pin_position_pred,'b');
 legend({'actual','predicted'});
 xlabel('time');
 

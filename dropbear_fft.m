@@ -18,7 +18,8 @@ num_lstm_cells = 4;
 % if LSTM, choose other training options
 training_snippet_size = 2;
 number_of_sequence_inputs = 16; % assuming no FFT
-number_of_training_rounds = 2;
+number_of_training_rounds = 2; % number of passes over whole dataset
+use_higher_sample_rate_for_inputs = 1;
 
 % if LSTM, choose whether to use built-in or hand-written forward pass code
 use_my_predict = 0;
@@ -39,8 +40,12 @@ epochs = 300;
 %%
 % read data and compute sample rates
 data = jsondecode(fileread('data_6_with_FFT.json'));
+
+% native sample rates computed here
 vibration_sample_rate = numel(data.acceleration_data) / (data.time_acceleration_data(end) - data.time_acceleration_data(1));
 pin_sample_rate = numel(data.measured_pin_location) / (data.measured_pin_location_tt(end) - data.measured_pin_location_tt(1));
+
+% transpose data
 vibration_signal = data.acceleration_data';
 pin_position = data.measured_pin_location';
 
@@ -49,6 +54,7 @@ for i = find(isnan(pin_position))
     pin_position(i) = (pin_position(i+1) + pin_position(i-1))/2;
 end
 
+% transpose time
 x = data.time_acceleration_data';
 
 % clip vibration signal due to missing pin samples at start
@@ -57,27 +63,50 @@ x = x(clip(end):end);
 vibration_signal = vibration_signal(clip(end):end);
 
 % subsample vibration data
-[x_sub,vibration_signal_sub] = myresample(vibration_signal,vibration_sample_rate,sample_rate);
+if ~use_higher_sample_rate_for_inputs
+    [x_sub_vib,vibration_signal_sub] = myresample(vibration_signal,vibration_sample_rate,sample_rate);
+else
+    % use higher sample rate for vibration data, as determined by the
+    % number of sequence inputs
+    [x_sub_vib,vibration_signal_sub] = myresample(vibration_signal,vibration_sample_rate,sample_rate*number_of_sequence_inputs);
+end
 
 % resample pin data
 % NOTE: this resets the xaxis to start from 0 instead of where the pin
 % position data actually starts (~1 s)
-[x_sub,pin_position_resamp] = myresample(pin_position,pin_sample_rate,sample_rate);
+[x_sub_pin,pin_position_resamp] = myresample(pin_position,pin_sample_rate,sample_rate);
 
 % clip extra samples
-signal_length=min(size(vibration_signal_sub,2),size(pin_position_resamp,2));
-vibration_signal_sub = vibration_signal_sub(1,1:signal_length);
-x_sub = x_sub(1,1:signal_length);
-pin_position_resamp = pin_position_resamp(1,1:signal_length);
+if ~use_higher_sample_rate_for_inputs
+    signal_length=min(size(vibration_signal_sub,2),size(pin_position_resamp,2));
+    vibration_signal_sub = vibration_signal_sub(1,1:signal_length);
+    x_sub_pin = x_sub_pin(1,1:signal_length);
+    x_sub_vib = x_sub_vib(1,1:signal_length);
+    pin_position_resamp = pin_position_resamp(1,1:signal_length);
+else
+    % need to consider differ sample rates for vibration and pin
+    signal_length=min(floor(size(vibration_signal_sub,2)/number_of_sequence_inputs),size(pin_position_resamp,2));
+    vibration_signal_sub = vibration_signal_sub(1,1:(signal_length*number_of_sequence_inputs));
+    x_sub_pin = x_sub_pin(1,1:signal_length);
+    x_sub_vib = x_sub_vib(1,1:(signal_length*number_of_sequence_inputs));
+    pin_position_resamp = pin_position_resamp(1,1:signal_length);
+end
 
-% extract training portion
-start_sample = find(x_sub>=train_start);
-start_sample = start_sample(1);
-end_sample = find(x_sub<train_end);
-end_sample = end_sample(end);
-x_sub_train = x_sub(start_sample:end_sample);
-vibration_signal_sub_train = vibration_signal_sub(start_sample:end_sample);
-pin_position_resamp_train = pin_position_resamp(start_sample:end_sample);
+% extract training portion (vibration)
+start_sample_vib = find(x_sub_vib>=train_start);
+start_sample_vib = start_sample_vib(1);
+end_sample_vib = find(x_sub_vib<train_end);
+end_sample_vib = end_sample_vib(end);
+x_sub_train = x_sub_vib(start_sample_vib:end_sample_vib);
+vibration_signal_sub_train = vibration_signal_sub(start_sample_vib:end_sample_vib);
+
+% extract training portion (pin)
+start_sample_pin = find(x_sub_pin>=train_start);
+start_sample_pin = start_sample_pin(1);
+end_sample_pin = find(x_sub_pin<train_end);
+end_sample_pin = end_sample_pin(end);
+x_sub_train = x_sub_vib(start_sample_pin:end_sample_pin);
+pin_position_resamp_train = pin_position_resamp(start_sample_pin:end_sample_pin);
 
 if use_fft
 
@@ -98,9 +127,15 @@ end
 
 % collate data if needed
 if number_of_sequence_inputs > 1
-    for i=1:(number_of_sequence_inputs-1)
-        vibration_signal_sub = [vibration_signal_sub;...
-                                zeros(1,i) vibration_signal_sub(1,1:end-i)];
+    if ~use_higher_sample_rate_for_inputs
+        for i=1:(number_of_sequence_inputs-1)
+            vibration_signal_sub = [vibration_signal_sub;...
+                                    zeros(1,i) vibration_signal_sub(1,1:end-i)];
+        end
+    else
+        vibration_signal_sub = reshape(vibration_signal_sub,...
+                                         number_of_sequence_inputs,...
+                                         floor(size(vibration_signal_sub,2)/number_of_sequence_inputs));
     end
 end
 

@@ -14,8 +14,11 @@ num_mlp_hidden_layers = 5;
 % if LSTM, choose units/cell and number of cells
 lstm_units = 50;
 num_lstm_cells = 4;
+
+% if LSTM, choose other training options
 training_snippet_size = 2;
 number_of_sequence_inputs = 16; % assuming no FFT
+number_of_training_rounds = 2;
 
 % if LSTM, choose whether to use built-in or hand-written forward pass code
 use_my_predict = 0;
@@ -97,7 +100,7 @@ end
 if number_of_sequence_inputs > 1
     for i=1:(number_of_sequence_inputs-1)
         vibration_signal_sub = [vibration_signal_sub;...
-                                vibration_signal_sub(1,(i+1):end) zeros(1,i)];
+                                zeros(1,i) vibration_signal_sub(1,1:end-i)];
     end
 end
 
@@ -113,7 +116,6 @@ opts = trainingOptions('sgdm', ...
 
 % build NN
 if MLP
-    
     layers = [imageInputLayer([fft_window,1,1])];
     
     for i=1:num_mlp_hidden_layers
@@ -164,26 +166,34 @@ if LSTM
     hold on;
     plot(x_sub_train,pin_position_resamp_train,'r');
     xlabel('time (s)');
-        
+    
+    % plot colors
+    colors = hsv(number_of_training_rounds+1);
+    
     data_duration = size(train_x,2)/sample_rate;
     number_of_chunks = floor(data_duration/training_snippet_size);
     chunk_size = floor(size(train_x,2) / number_of_chunks);
-    lineobjs = zeros(1,number_of_chunks);
-    for chunk=1:number_of_chunks
-        index_range = (chunk-1)*chunk_size+1:chunk*chunk_size;
-        fprintf("training chunk %d/%d (%d/%d samples)\n",chunk,number_of_chunks,numel(index_range),size(train_x,2));
-        
-        if chunk==1
-            net = trainNetwork(train_x(:,index_range),pin_position_resamp_train(:,index_range),layers,opts);
-        else
-            net = trainNetwork(train_x(:,index_range),pin_position_resamp_train(:,index_range),net.Layers,opts);
+    lineobjs = cell(1,number_of_chunks);
+    for round=1:number_of_training_rounds
+        for chunk=1:number_of_chunks
+            index_range = (chunk-1)*chunk_size+1:chunk*chunk_size;
+            fprintf("training chunk %d/%d (%d/%d samples)\n",chunk,number_of_chunks,numel(index_range),size(train_x,2));
+
+            if chunk==1
+                net = trainNetwork(train_x(:,index_range),pin_position_resamp_train(:,index_range),layers,opts);
+            else
+                net = trainNetwork(train_x(:,index_range),pin_position_resamp_train(:,index_range),net.Layers,opts);
+            end
+
+            %if ~isempty(lineobjs{1,chunk}) ~= 0
+            %    delete(lineobjs(chunk));
+            %end
+            preddata = predict(net,train_x(:,index_range));
+            plotobj =...
+                plot(x_sub_train(1,index_range),preddata,'color',colors(round+1,:));
+            drawnow;
+            lineobjs{1,chunk} = plotobj;
         end
-        
-        if lineobjs(chunk) ~= 0
-            delete(lineobjs(chunk));
-        end
-        lineobjs(chunk)=...
-            plot(x_sub_train(1:index_range),predict(net,pin_position_resamp_train(:,index_range)));
     end
 end
 

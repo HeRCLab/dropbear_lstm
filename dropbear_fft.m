@@ -16,7 +16,7 @@ lstm_units = 50;
 num_lstm_cells = 4;
 
 % if LSTM, choose other training options
-training_snippet_size = 0.5;
+training_snippet_size = 8;
 number_of_sequence_inputs = 16; % assuming no FFT
 number_of_training_rounds = 1; % number of passes over whole dataset
 use_higher_sample_rate_for_inputs = 1;
@@ -230,7 +230,7 @@ if LSTM
             if chunk==1
                 net = trainNetwork(train_x(:,index_range),pin_position_resamp_train(:,index_range),layers,opts);
             else
-                net = trainNetwork(train_x(:,index_range),pin_position_resamp_train(:,index_range),net.Layers,opts);
+                net = trainNetwork(train_x(:,index_range),pin_position_resamp_train(:,index_range),layerGraph(net.Layers),opts);
             end
 
             %if ~isempty(lineobjs{1,chunk}) ~= 0
@@ -238,7 +238,7 @@ if LSTM
             %end
             preddata = predict(net,train_x(:,index_range));
             plotobj =...
-                plot(x_sub_train(1,index_range),preddata,'color',colors(round+1,:));
+                plot(x_sub_train_pin(1,index_range),preddata,'color',colors(round+1,:));
             drawnow;
             lineobjs{1,chunk} = plotobj;
         end

@@ -37,7 +37,7 @@ epochs = 50;
 sample_rate = 400;
 
 % choose training time
-epochs = 5000;
+epochs = 1000;
 
 %%
 % read data and compute sample rates
@@ -163,7 +163,8 @@ opts = trainingOptions('sgdm', ...
     'LearnRateSchedule','piecewise', ...
     'LearnRateDropPeriod',200, ...
     'LearnRateDropFactor',0.1, ...
-    'Verbose',true);
+    'Verbose',true,...
+    'Minibatchsize',20); % minibatchsize has no effect, since LSTMs are limited to batch size of 1
 
 % build NN
 if MLP

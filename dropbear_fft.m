@@ -12,11 +12,11 @@ mlp_hidden_neurons = 1000;
 num_mlp_hidden_layers = 5;
 
 % if LSTM, choose units/cell and number of cells
-lstm_units = 50;
-num_lstm_cells = 4;
+lstm_units = 10;
+num_lstm_cells = 3;
 
 % if LSTM, choose other training options
-training_snippet_size = 8;
+training_snippet_size = 45;
 number_of_sequence_inputs = 16; % assuming no FFT
 number_of_training_rounds = 1; % number of passes over whole dataset
 use_higher_sample_rate_for_inputs = 1;
@@ -37,7 +37,7 @@ epochs = 50;
 sample_rate = 400;
 
 % choose training time
-epochs = 500;
+epochs = 5000;
 
 %%
 % read data and compute sample rates
@@ -113,6 +113,7 @@ pin_position_resamp_train = pin_position_resamp(start_sample_pin:end_sample_pin)
 % plot for sanity check
 figure;
 hold on;
+title('training data');
 plot(x_sub_train_vib,vibration_signal_sub_train,'g');
 yyaxis right
 plot(x_sub_train_pin,pin_position_resamp_train,'r');
@@ -221,7 +222,7 @@ if LSTM
     colors = hsv(number_of_training_rounds+1);
     
     data_duration = size(train_x,2)/sample_rate;
-    number_of_chunks = floor(data_duration/training_snippet_size);
+    number_of_chunks = ceil(data_duration/training_snippet_size);
     chunk_size = floor(size(train_x,2) / number_of_chunks);
     lineobjs = cell(1,number_of_chunks);
     for round=1:number_of_training_rounds
@@ -300,6 +301,7 @@ pin_position_pred = predict(net,test_x);
 % plot full
 figure
 hold on;
+title('predicted data');
 plot(x_sub_pin,pin_position_resamp,'r');
 plot(x_sub_pin,pin_position_pred,'b');
 legend({'actual','predicted'});

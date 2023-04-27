@@ -16,7 +16,7 @@ lstm_units = 10;
 num_lstm_cells = 3;
 
 % if LSTM, choose other training options
-training_snippet_size = 45;
+training_snippet_size = 8;
 number_of_sequence_inputs = 16; % assuming no FFT
 number_of_training_rounds = 1; % number of passes over whole dataset
 use_higher_sample_rate_for_inputs = 1;
@@ -164,7 +164,7 @@ opts = trainingOptions('sgdm', ...
     'LearnRateDropPeriod',200, ...
     'LearnRateDropFactor',0.1, ...
     'Verbose',true,...
-    'Minibatchsize',20); % minibatchsize has no effect, since LSTMs are limited to batch size of 1
+    'Minibatchsize',20); % minibatchsize has no effect, since LSTMs are limited to batch size of 1((
 
 % build NN
 if MLP

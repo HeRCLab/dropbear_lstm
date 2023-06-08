@@ -23,7 +23,8 @@ function [cell_state,hidden_state] = lstm_forward(cell_state,hidden_state,layer,
     %chunk = 1:4:num_units*4;
     % (units x 1) x (1 x 1) + (units x units) x (units x 1) + (units x 1)
 
-    forget_gate = input_weights(chunk,:) * x + recurrent_weights(chunk,:) * hidden_state + bias(chunk,1);
+    forget_gate = input_weights(chunk,:) * x + recurrent_weights(chunk,:) * hidden_state + bias(chunk,1);simulink
+    
     forget_gate = sigmoid(forget_gate);
 
     segment = perms(2);

@@ -6,7 +6,7 @@ close all;
 % number of inputs
 M = 20;
 % number of reservoir nodes
-N = 10;
+N = 100;
 % number of outputs
 Q = 20;
 
@@ -15,7 +15,7 @@ W_in = randn(N,M);
 W = randn(N,N);
 W_out = randn(N,Q);
 
-% inputs
+% inputs (syntheisize Lorez 96 sequence)
 signal = L96;
 
 % prepare input signal
@@ -24,31 +24,38 @@ obs = floor(orig_samples/M)
 signal = signal(1:(obs*M),1);
 U = reshape(signal,M,obs)';
 
-for epoch=1:5
-
-    % find state sequence
-    X = zeros(obs,N);
-    Y = zeros(obs,Q);
-    for i=2:size(U,1)
-        % (N x M) * (M,1) + (N x N) * (N x 1)
-        X(i,:) = tanh(W_in*U(i-1,:)' + W*X(i-1,:)')';
-        % output
-        Y(i-1,:) = X(i,:) * W_out;
-    end
-
-    figure;
-    plot(U(:,1));
-    hold on;
-    plot(Y(:,1));
-    title('before training');
-    legend({'input','output'});
-    rmse = mean((U(:,1)-Y(:,1)).^2)^.5
-
-    % train output layer
-    W_out = inv(X' * X) * X'*Y;
-
+% find state sequence
+X = zeros(obs,N);
+Y = zeros(obs,Q);
+for i=2:size(U,1)
+    % (N x M) * (M,1) + (N x N) * (N x 1)
+    X(i,:) = tanh(W_in*U(i-1,:)' + W*X(i-1,:)')';
+    % output
+    Y(i-1,:) = X(i,:) * W_out;
 end
 
+figure;
+plot(U(:,1));
+hold on;
+plot(Y(:,1));
+title('before training');
+legend({'input','output'});
+rmse_before = mean((U(:,1)-Y(:,1)).^2)^.5300*
+
+% train output layer
+W_out = inv(X' * X) * X'*U;
+%W_out = X\Y;
+
+% find state sequence
+X = zeros(obs,N);
+Y = zeros(obs,Q);
+for i=2:size(U,1)
+    % (N x M) * (M,1) + (N x N) * (N x 1)
+    X(i,:) = tanh(W_in*U(i-1,:)' + W*X(i-1,:)')';
+    % output
+    Y(i-1,:) = X(i,:) * W_out;
+end
+    
 figure;
 plot(U(:,1));
 hold on;

@@ -12,7 +12,7 @@ mlp_hidden_neurons = 1000;
 num_mlp_hidden_layers = 5;
 
 % if LSTM, choose units/cell and number of cells
-lstm_units = [20,20,20];
+lstm_units = [32,32,32];
 num_lstm_cells = 3;
 
 % if LSTM, choose other training options
@@ -36,73 +36,13 @@ window_size = .1; % seconds
 sample_rate = 400;
 
 % choose training time
-epochs = 100;
+epochs = 200;
 
-%%
-% read data and compute sample rates
-data = jsondecode(fileread('data_6_with_FFT.json'));
-
-% native sample rates computed here
-%vibration_sample_rate = numel(data.acceleration_data) / (data.time_acceleration_data(end) - data.time_acceleration_data(1));
-%pin_sample_rate = numel(data.measured_pin_location) / (data.measured_pin_location_tt(end) - data.measured_pin_location_tt(1));
-
-% transpose data
-vibration_signal = data.acceleration_data';
-pin_position = data.measured_pin_location';
-
-
-% remove nans in pin position
-for i = find(isnan(pin_position))
-    pin_position(i) = (pin_position(i+1) + pin_position(i-1))/2;
-end
-
-% create new time axes
-if use_higher_sample_rate_for_inputs
-    sample_rate_vib = sample_rate*number_of_sequence_inputs;
-else
-    sample_rate_vib = sample_rate;
-end
-time_vibration = [0:1/sample_rate_vib:data.time_acceleration_data(end)];
-time_pin = [0:1/sample_rate:data.time_acceleration_data(end)];
-
-% clip vibration signal due to missing pin samples at start
-clip = find(time_vibration < data.measured_pin_location_tt(1));
-time_vibration = time_vibration(clip(end):end);
-vibration_signal = vibration_signal(clip(end):end);
-
-% interpolate signals
-vibration_signal = interp1(data.time_acceleration_data,data.acceleration_data,time_vibration);
-pin_position = interp1(data.measured_pin_location_tt,pin_position,time_pin);
-
-% subsample vibration data
-%if ~use_higher_sample_rate_for_inputs
-%    [x_sub_vib,vibration_signal_sub] = myresample(vibration_signal,vibration_sample_rate,sample_rate);
-%else
-    % use higher sample rate for vibration data, as determined by the
-    % number of sequence inputs
-    % [x_sub_vib,vibration_signal_sub] = myresample(vibration_signal,vibration_sample_rate,sample_rate*number_of_sequence_inputs);
-%end
-
-% resample pin data
-% NOTE: this resets the xaxis to start from 0 instead of where the pin
-% position data actually starts (~1 s)
-%[x_sub_pin,pin_position_resamp] = myresample(pin_position,pin_sample_rate,sample_rate);
-
-% clip extra samples
-% if ~use_higher_sample_rate_for_inputs
-%     signal_length=min(size(vibration_signal_sub,2),size(pin_position_resamp,2));
-%     vibration_signal_sub = vibration_signal_sub(1,1:signal_length);
-%     x_sub_pin = x_sub_pin(1,1:signal_length);
-%     x_sub_vib = x_sub_vib(1,1:signal_length);
-%     pin_position_resamp = pin_position_resamp(1,1:signal_length);
-% else
-%     % need to consider differ sample rates for vibration and pin
-%     signal_length=min(floor(size(vibration_signal_sub,2)/number_of_sequence_inputs),size(pin_position_resamp,2));
-%     vibration_signal_sub = vibration_signal_sub(1,1:(signal_length*number_of_sequence_inputs));
-%     x_sub_pin = x_sub_pin(1,1:signal_length);
-%     x_sub_vib = x_sub_vib(1,1:(signal_length*number_of_sequence_inputs));
-%     pin_position_resamp = pin_position_resamp(1,1:signal_length);
-% end
+[time_vibration,vibration_signal,...
+    time_pin,pin_position] = read_and_clean_dataset('data_6_with_FFT.json', ...
+                                                    sample_rate,...
+                                                    number_of_sequence_inputs, ...
+                                                    use_higher_sample_rate_for_inputs);
 
 % rename for the benefit of legacy code
 x_sub_vib = time_vibration;
@@ -268,8 +208,6 @@ end
 
 exportONNXNetwork(net,"dropbear_lstm.onnx");
 
-%%
-
 % predict training data
 if LSTM && use_my_predict
     [net,pin_position_pred_train,cell_states,hidden_states] = mypredictAndUpdateState2(net,train_x);
@@ -336,4 +274,56 @@ end
 if LSTM
     rmse_full = mean((pin_position_resamp_train-pin_position_pred_train).^2)^.5
     rmse_full = mean((pin_position_resamp-pin_position_pred).^2)^.5
+end
+
+
+function [time_vibration,vibration_signal,...
+    time_pin,pin_position] = read_and_clean_dataset(filename,...
+                                                    sample_rate,...
+                                                    number_of_sequence_inputs, ...
+                                                    use_higher_sample_rate_for_inputs)
+    % read data and compute sample rates
+    data = jsondecode(fileread(filename));
+    
+    % native sample rates computed here
+    %vibration_sample_rate = numel(data.acceleration_data) / (data.time_acceleration_data(end) - data.time_acceleration_data(1));
+    %pin_sample_rate = numel(data.measured_pin_location) / (data.measured_pin_location_tt(end) - data.measured_pin_location_tt(1));
+    
+    % remove nans in pin position
+    for i = find(isnan(data.measured_pin_location))
+        data.measured_pin_location(i) = (data.measured_pin_location(i+1) + data.measured_pin_location(i-1))/2;
+    end
+    
+    % determine overlapping time span for both signals
+    latest_start_time = max([data.time_acceleration_data(1) data.measured_pin_location_tt(1)]);
+    earliest_end_time = min([data.time_acceleration_data(end) data.measured_pin_location_tt(end)]);
+    
+    % trim signals
+    clip_start = find(data.time_acceleration_data>=latest_start_time);
+    clip_end = find(data.time_acceleration_data>=earliest_end_time);
+    data.time_acceleration_data = data.time_acceleration_data(clip_start(1):clip_end(1));
+    data.acceleration_data = data.acceleration_data(clip_start(1):clip_end(1));
+    
+    clip_start = find(data.measured_pin_location_tt>=latest_start_time);
+    clip_end = find(data.measured_pin_location_tt>=earliest_end_time);
+    data.measured_pin_location_tt = data.measured_pin_location_tt(clip_start(1):clip_end(1));
+    data.measured_pin_location = data.measured_pin_location(clip_start(1):clip_end(1));
+    
+    % create new time axes
+    if use_higher_sample_rate_for_inputs
+        sample_rate_vib = sample_rate*number_of_sequence_inputs;
+    else
+        sample_rate_vib = sample_rate;
+    end
+    time_vibration = [data.time_acceleration_data(1):...
+                        1/sample_rate_vib:...
+                        data.time_acceleration_data(end)];
+    
+    time_pin = [data.measured_pin_location_tt(1):...
+                        1/sample_rate:...
+                        data.measured_pin_location_tt(end)];
+    
+    % interpolate signals
+    vibration_signal = interp1(data.time_acceleration_data,data.acceleration_data,time_vibration);
+    pin_position = interp1(data.measured_pin_location_tt,data.measured_pin_location,time_pin);
 end

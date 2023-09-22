@@ -1,0 +1,29 @@
+r = 1;
+epochs = 1000;
+neurons = [100 100];
+samples = 100;
+
+xy_points = rand(samples,2);
+z_points = (xy_points(:,1).^2 + xy_points(:,2).^2).^.5-r^2;
+
+layers = featureInputLayer(2);
+
+for i=1:numel(neurons)
+    layers = [layers fullyConnectedLayer(neurons(i)) tanhLayer()];
+end
+
+layers = [layers,...
+            fullyConnectedLayer(1),...
+            regressionLayer];
+
+% training parameters
+opts = trainingOptions('adam', ...
+    'MaxEpochs',epochs, ...
+    'GradientThreshold',1, ...
+    'InitialLearnRate',.03, ...
+    'LearnRateSchedule','piecewise', ...
+    'LearnRateDropPeriod',125, ...
+    'LearnRateDropFactor',0.2, ...
+    'Verbose',1);
+
+net = trainNetwork(xy_points,z_points,layers,opts);

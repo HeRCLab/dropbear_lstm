@@ -9,20 +9,20 @@ use_fft = 0;
 
 % if MLP, choose MLP hidden layer size and number of hidden layers
 mlp_hidden_neurons = 1000;
-num_mlp_hidden_layers = 5;
+num_mlp_hidden_layers = 3;
 
 % if LSTM, choose units/cell and number of cells
-lstm_units = [32,32,32];
+lstm_units = [20,20,20];
 num_lstm_cells = 3;
 
 % if LSTM, choose other training options
 training_snippet_size = 50; % seconds
-number_of_sequence_inputs = 16; % assuming no FFT
+number_of_sequence_inputs = 20; % assuming no FFT
 number_of_training_rounds = 1; % number of passes over whole dataset
 use_higher_sample_rate_for_inputs = 1; % decouple input and output T_s
 
 % if LSTM, choose whether to use built-in or hand-written forward pass code
-use_my_predict = 1;
+use_my_predict = 0;
 
 % choose a portion of the signal on which to train
 % note this different from training snippet size
@@ -33,10 +33,10 @@ train_end = 60; % seconds
 window_size = .1; % seconds
 
 % choose an output sample rate
-sample_rate = 400;
+sample_rate = 2000;
 
 % choose training time
-epochs = 200;
+epochs = 100;
 
 [time_vibration,vibration_signal,...
     time_pin,pin_position] = read_and_clean_dataset('data_6_with_FFT.json', ...
@@ -105,7 +105,7 @@ if number_of_sequence_inputs > 1
                                     zeros(1,i) vibration_signal_sub(1,1:end-i)];
         end
     else
-        round_down = floor(numel(vibration_signal_sub)/16)*16;
+        round_down = floor(numel(vibration_signal_sub)/number_of_sequence_inputs)*number_of_sequence_inputs;
         vibration_signal_sub = reshape(vibration_signal_sub(1,1:round_down),...
                                          number_of_sequence_inputs,...
                                          []);
@@ -206,7 +206,7 @@ if LSTM
     end
 end
 
-exportONNXNetwork(net,"dropbear_lstm.onnx");
+%exportONNXNetwork(net,"dropbear_lstm.onnx");
 
 % predict training data
 if LSTM && use_my_predict
@@ -218,8 +218,8 @@ end
 % plot train
 figure
 hold on;
-plot(x_sub_train_pin,pin_position_resamp_train,'r');
-plot(x_sub_train_pin,pin_position_pred_train,'b');
+plot(x_sub_train_pin(1:size(pin_position_pred_train,2)),pin_position_resamp_train(1:size(pin_position_pred_train,2)),'r');
+plot(x_sub_train_pin(1:size(pin_position_pred_train,2)),pin_position_pred_train,'b');
 legend({'actual','predicted'});
 xlabel('time (s)');
 
@@ -260,8 +260,8 @@ pin_position_pred = predict(net,test_x);
 figure
 hold on;
 title('predicted data');
-plot(x_sub_pin,pin_position_resamp,'r');
-plot(x_sub_pin,pin_position_pred,'b');
+plot(x_sub_pin(1:size(pin_position_pred,2)),pin_position_resamp(1:size(pin_position_pred,2)),'r');
+plot(x_sub_pin(1:size(pin_position_pred,2)),pin_position_pred,'b');
 legend({'actual','predicted'});
 xlabel('time');
 
@@ -272,8 +272,8 @@ if MLP
 end
 
 if LSTM
-    rmse_full = mean((pin_position_resamp_train-pin_position_pred_train).^2)^.5
-    rmse_full = mean((pin_position_resamp-pin_position_pred).^2)^.5
+    rmse_full = mean((pin_position_resamp_train(1:size(pin_position_pred_train,2))-pin_position_pred_train(1:size(pin_position_pred_train,2))).^2)^.5
+    rmse_full = mean((pin_position_resamp(1:size(pin_position_pred_train,2))-pin_position_pred).^2)^.5
 end
 
 

@@ -33,7 +33,7 @@ train_end = 60; % seconds
 window_size = .1; % seconds
 
 % choose an output sample rate
-sample_rate = 2000;
+sample_rate = 700;
 
 % choose training time
 epochs = 100;

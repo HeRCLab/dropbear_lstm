@@ -41,15 +41,19 @@ boundary_list = {};
 % find the earliest birth of H-2's
 for i=1:size(distance_matrix,1)-1
     [dist,j]=min(distance_matrix(i,i+1:end));
-    boundary_list = [boundary_list;{[i j],dist}];
+    if dist < radius
+        boundary_list = [boundary_list;{[i j],dist}];
+    end
 end
 
 % find the earliest birth of H-3's
-for i=1:size(distance_matrix,1)
+% idea: for each pair of points i and j, find a third point k as
+% arg min k (max(distance(i,j),distance(i,k),distance(j,k)))
+for i=1:(size(distance_matrix,1)-2)
     for j=i+1:size(distance_matrix,1)
         % extract the distances from node i to all others
-        dist1 = distance_matrix(i,i+1:end);
         dist_idx = i+1:size(distance_matrix,2);
+        dist1 = distance_matrix(i,dist_idx);
         %  extract the distances from node j to all others
         dist2 = distance_matrix(j,i+1:end);
         % remove node j
@@ -58,7 +62,7 @@ for i=1:size(distance_matrix,1)
         dist_idx(j-i)=[];
 
         % find the minimum maximum distance from nodes i and j
-        dist_i_j = ones(1,numel(dist1))*distance_matrix(i,j);
+        dist_i_j = ones(1,numel(dist1)) * distance_matrix(i,j);
         [dist,k_idx]=min(max([dist1;dist2;dist_i_j]));
 
         % add to boundary list
@@ -67,28 +71,43 @@ for i=1:size(distance_matrix,1)
 end
 
 % make the boundary matrix
-boundary_matrix = zeros(size(boundary_list,1),size(distance_matrix,1));
+boundary_matrix = zeros(size(distance_matrix,1),size(boundary_list,1));
 
 % populate the boundry matrx
 for i=1:size(boundary_list,1)
     points = boundary_list{i,1};
     for j=1:size(points,2)
-        boundary_matrix(i,points(j))=1;
+        boundary_matrix(points(j),i)=1;
     end
 end
 
 toc
 
-idx = 1:size(distance_matrix,1);
-idx = repmat(idx,1,size(distance_matrix,1));
-idx = idx';
+% reduce the boundary matrix
+for i=1:size(boundary_matrix,2)
+    one_locs_master = find(boundary_matrix(:,i));
+    lowest_master = one_locs_master(end);
 
-idx2 = 1:size(distance_matrix,1);
-idx2 = repmat(idx2,size(distance_matrix,1),1);
-idx2 = idx2(:);
+    % TODO: potentially change this to a while loop
+    for j=i+1:size(boundary_matrix,2)
+        one_locs_slave = find(boundary_matrix(:,j));
+        lowest_slave = one_locs_slave(end);
+        if lowest_master == lowest_slave
+            boundary_matrix(:,j) = double(xor(boundary_matrix(:,j),boundary_matrix(:,i)));
+        end
+    end
+end
 
-sorted_distances = [idx idx2 distance_matrix(:)];
-sorted_distances = sortrows(sorted_distances,3);
+% idx = 1:size(distance_matrix,1);
+% idx = repmat(idx,1,size(distance_matrix,1));
+% idx = idx';
+% 
+% idx2 = 1:size(distance_matrix,1);
+% idx2 = repmat(idx2,size(distance_matrix,1),1);
+% idx2 = idx2(:);
+% 
+% sorted_distances = [idx idx2 distance_matrix(:)];
+% sorted_distances = sortrows(sorted_distances,3);
 
 function [time_vibration,vibration_signal,...
     time_pin,pin_position] = read_and_clean_dataset(filename,...

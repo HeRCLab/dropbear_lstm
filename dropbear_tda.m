@@ -26,6 +26,10 @@ function [] = main ()
     % only compute TDA features for the first window
     % note this will eventually be a loop to compute all windows
     n_windows = (size(vibration_signal_samples,1)-number_of_samples_in_window+1);
+
+    % overridden to perform a partial run
+    n_windows = 5.5 * sample_rate;
+
     longest_distances = zeros(n_windows,n);
     for window_number = 1:n_windows
         %sample_range_in_window = (window_number-1)*number_of_samples_in_window+1:window_number*number_of_samples_in_window;
@@ -42,6 +46,14 @@ function [] = main ()
             drawnow;
         end
     end
+
+    xlabel('time (s)');
+    ylabel('longest persistance');
+
+    figure new;
+    plot(time_pin(1:window_number),pin_position(1:window_number));
+    xlabel('time(s)');
+    ylabel('displacement (m)');
 
 end
 

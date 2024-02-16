@@ -11,7 +11,7 @@ function [] = main ()
     % set up parameters
     n = 1; % number of longest persistances
     sample_rate = 1000;
-    dim = 2;
+    dim = 4;
     use_higher_sample_rate_for_inputs = 0;
     radius = 1e6;
     tda_window = .01; % in seconds
@@ -41,7 +41,7 @@ function [] = main ()
         % extract features
         longest_distances(window_number,:) = longest_persistance(distance_matrix,boundary_matrix,n,n_h1,all_h);
         if mod(window_number,100)
-            plot((1:window_number)./sample_rate+start_time,longest_distances(1:window_number),'r');
+            plot((1:window_number)./sample_rate+start_time,longest_distances(1:window_number),'m','Marker','None');
             hold on;
             drawnow;
         end
@@ -365,7 +365,7 @@ function [time_vibration,vibration_signal,...
     
     % convert input data into moving window datapoints
     vibration_signal_samples = zeros(size(vibration_signal,2)-1,dim);
-    for i=1:size(vibration_signal_samples,1)-1
+    for i=1:size(vibration_signal_samples,1)-dim-1
         vibration_signal_samples(i,:) = vibration_signal(i:i+dim-1);
     end
     

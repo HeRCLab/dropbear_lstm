@@ -1,8 +1,10 @@
 % parameters
 
+gpuDevice(2);
+
 % choose a network
-MLP = 0;
-LSTM = 1;
+MLP = 1;
+LSTM = 0;
 
 % add an FFT front-end?
 use_fft = 0;
@@ -17,9 +19,9 @@ num_lstm_cells = 3;
 
 % if LSTM, choose other training options
 training_snippet_size = 50; % seconds
-number_of_sequence_inputs = 20; % assuming no FFT
+number_of_sequence_inputs = 512; % assuming no FFT
 number_of_training_rounds = 1; % number of passes over whole dataset
-use_higher_sample_rate_for_inputs = 1; % decouple input and output T_s
+use_higher_sample_rate_for_inputs = 0; % decouple input and output T_s
 
 % if LSTM, choose whether to use built-in or hand-written forward pass code
 use_my_predict = 0;
@@ -33,7 +35,7 @@ train_end = 60; % seconds
 window_size = .1; % seconds
 
 % choose an output sample rate
-sample_rate = 700;
+sample_rate = 5000;
 
 % choose training time
 epochs = 100;
@@ -94,7 +96,11 @@ if use_fft
     end
 
     vibration_signal_sub_fft_train = vibration_signal_sub_fft(:,start_sample:end_sample);
-    
+else
+
+    vibration_signal_sub_fft_train = vibration_signal_sub;
+    %fft_window = 512; % input size, since we're not using an FFT in this configuration
+
 end
 
 % collate data if needed
@@ -123,10 +129,21 @@ opts = trainingOptions('adam', ...
     'Verbose',true,...
     'Minibatchsize',20); % minibatchsize has no effect, since LSTMs are limited to batch size of 1((
 
+%%
+
 % build NN
 if MLP
-    layers = [imageInputLayer([fft_window,1,1])];
+    layers = [imageInputLayer([number_of_sequence_inputs,1,1])];
     
+    layers = [layers ...
+        convolution2dLayer(3,256) reluLayer maxPooling1dLayer(2) ...
+        convolution2dLayer(3,256) reluLayer maxPooling1dLayer(2) ...
+        convolution2dLayer(3,256) reluLayer maxPooling1dLayer(2) ...
+        convolution2dLayer(3,256) reluLayer maxPooling1dLayer(2) ...
+        convolution2dLayer(3,256) reluLayer maxPooling1dLayer(2) ...
+        convolution2dLayer(3,256) reluLayer maxPooling1dLayer(2) ...
+        convolution2dLayer(3,256) reluLayer maxPooling1dLayer(2)];
+
     for i=1:num_mlp_hidden_layers
         layers = [layers fullyConnectedLayer(mlp_hidden_neurons) tanhLayer];
     end
@@ -134,7 +151,11 @@ if MLP
     layers = [layers fullyConnectedLayer(1) regressionLayer];
     
     % allocate training data
-    train_x = zeros(fft_window,1,1,size(vibration_signal_sub_fft_train,2));
+    if use_fft
+        train_x = zeros(fft_window,1,1,size(vibration_signal_sub_fft_train,2));
+    else
+        train_x = zeros(number_of_sequence_inputs,size(vibration_signal_sub,2));
+    end
 
     % organize training data
     for i=1:size(train_x,4)

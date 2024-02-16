@@ -18,7 +18,7 @@ function [] = main ()
     
     % read and plot data
     [time_vibration,vibration_signal,...
-            time_pin,pin_position,vibration_signal_samples] = read_data (sample_rate,dim,0);
+            time_pin,pin_position,vibration_signal_samples,start_time] = read_data (sample_rate,dim,1,5.5);
     
     % extract a window for TDA
     number_of_samples_in_window = sample_rate * tda_window;
@@ -37,11 +37,11 @@ function [] = main ()
         window_data = vibration_signal_samples(sample_range_in_window,:);
 
         % perform TDA
-        [distance_matrix,boundary_matrix] = tda (window_data,radius);
+        [distance_matrix,boundary_matrix,all_h,n_h1,n_h2] = tda (window_data,radius);
         % extract features
-        longest_distances(window_number,:) = longest_persistance(distance_matrix,boundary_matrix,n,vibration_signal_samples);
+        longest_distances(window_number,:) = longest_persistance(distance_matrix,boundary_matrix,n,n_h1,all_h);
         if mod(window_number,100)
-            plot((1:window_number)./sample_rate,longest_distances(1:window_number),'r');
+            plot((1:window_number)./sample_rate+start_time,longest_distances(1:window_number),'r');
             hold on;
             drawnow;
         end
@@ -57,20 +57,18 @@ function [] = main ()
 
 end
 
-function longest_distances = longest_persistance(distance_matrix,boundary_matrix,n,n_points)
+function longest_distances = longest_persistance(distance_matrix,boundary_matrix,n,n_h1,all_h)
 
     longest_distances = zeros(1,n);
     longest_enums = zeros(1,n);
-        
+
     n_points = size(distance_matrix,1);
-    n_homologies = n_points + ...
-            (n_points^2-n_points)/2 + ...
-            (n_points^3-3*n_points^2+2*n_points)/6;
+    n_h = max(cell2mat(all_h(:,3)));
 
     % iterate over all H0, H1, and H2 homologies
-    for i = 1:n_homologies
-        death = find_death(boundary_matrix,distance_matrix,i,n_points);
-        birth = find_birth(boundary_matrix,distance_matrix,i,n_points);
+    for i = 1:n_h
+        death = find_death(boundary_matrix,distance_matrix,i,n_points,n_h1,all_h);
+        birth = find_birth(boundary_matrix,distance_matrix,i,n_points,all_h);
         persistance = death - birth;
 
         for j=1:n
@@ -85,9 +83,9 @@ function longest_distances = longest_persistance(distance_matrix,boundary_matrix
 end
 
 % find the birth time of a given homology
-function birth_time = find_birth (boundary_matrix,distance_matrix,enum,n_points)
+function birth_time = find_birth (boundary_matrix,distance_matrix,enum,n_points,all_h)
     % find the points for this homology
-    points = find_points_from_enumeration (enum,n_points);
+    points = find_points_from_enumeration (enum,n_points,all_h);
 
     if numel(points)==1
         birth_time=0;
@@ -102,10 +100,9 @@ end
 
 % find the death time of a given homology
 % assume a time horizon of the largest distance
-function death_time = find_death (boundary_matrix,distance_matrix,enum,n_points)
-    n_h1_homologies = (n_points^2-n_points)/2;
+function death_time = find_death (boundary_matrix,distance_matrix,enum,n_points,n_h1,all_h)
 
-    if enum > n_points + n_h1_homologies
+    if enum > n_points + n_h1
         % H2's always die at the horizon
         death_time = max(max(distance_matrix));
         return;
@@ -128,7 +125,7 @@ function death_time = find_death (boundary_matrix,distance_matrix,enum,n_points)
     end
 
     % find the points for this homology
-    points = find_points_from_enumeration (overriding_homology,n_points);
+    points = find_points_from_enumeration (overriding_homology,n_points,all_h);
 
     assert(numel(points)>1);
 
@@ -144,68 +141,86 @@ function death_time = find_death (boundary_matrix,distance_matrix,enum,n_points)
 end
 
 % converts a scalar index into a set of points
-function points = find_points_from_enumeration (enum,n_points)
-
-    n_h1_homologies = (n_points^2-n_points)/2;
-
-    n_h2_homologies = (n_points^3-3*n_points^2+2*n_points)/6;
-
-    if enum <= n_points
-        % H0
-        points = enum;
-    elseif (enum-n_points) <= n_h1_homologies
-        % H1
-        % first point
-        accum=0;
-        for i=1:n_points
-            if ((enum-n_points) - accum) <= (n_points-i)
-                points = [i,enum - n_points - accum + i];
-                break;
-            end
-            accum = accum + n_points-i;
-        end
-    else
-        % H2
-        first=1;
-        second=2;
-        third=3;
-        for i=1:(enum-n_h1_homologies-n_points-1)
-            if third < n_points
-                third = third + 1;
-            elseif second < (n_points-1)
-                second = second + 1;
-                third = second + 1;
-            else
-                first = first + 1;
-                second = first + 1;
-                third = second + 1;
-            end
-        end
-        points = [first,second,third];
-    end
+function points = find_points_from_enumeration (enum,n_points,all_h)
+   for i=1:size(all_h,1)
+       if all_h{i,3} == enum
+           points = all_h{i,2};
+           break;
+       end
+   end
 end
 
 % converts a set of points into a scalar index
-function enum = find_enumeration_from_points (points,n_points)
+function enum = find_enumeration_from_points (points,n_points,all_h)
+    for i=1:size(all_h,1)
+       if all_h{i,2} == points
+           num = all_h{i,3};
+           break;
+       end
+    end
+end
 
-    n_h0_homologies = n_points;
-    n_h1_homologies = (n_points^2-n_points)/2;
-    n_h2_homologies = (n_points^3-3*n_points^2+2*n_points)/6;
+function [h0,h1,h2] = distance_matrix_to_list (dist_matrix)
+    n = size(dist_matrix,1);
+    n_pairs = (n^2-n)/2;
+    n_triples = (n^3 - 3*n^2 + 2*n)/6;
 
-    for i=1:(n_h0_homologies+n_h1_homologies+n_h2_homologies)
-        points_potential = find_points_from_enumeration (i,n_points);
-        if numel(points)==numel(points_potential)
-            match = points == points_potential;
-            if sum(match) == max([numel(points),numel(points_potential)])
-                enum = i;
-                return
+    h = cell(n,3);
+    h1 = cell(n_pairs,3);
+    h2 = cell(n_triples,3);
+
+    for i=1:n
+        h0{i,1} = 0;
+        h0{i,2} = i;
+        h0{i,3} = i;
+    end
+
+    cnt=1;
+    for i=1:n-1
+        for j=i+1:n
+            h1{cnt,1} = dist_matrix(i,j);
+            h1{cnt,2} = [i,j];
+            h1{cnt,3} = 0;
+            cnt=cnt+1;
+        end
+    end
+
+    cnt=1;
+    for i=1:n-2
+        for j=i+1:n-1
+            for k=j+1:n
+                h2{cnt,1} = max([dist_matrix(i,j),dist_matrix(i,k),dist_matrix(j,k)]);;
+                h2{cnt,2} = [i,j,k];
+                h2{cnt,3} = 0;
+                cnt=cnt+1;
             end
+        end
+    end
+
+end
+
+function [h,n_h] = find_homologies(h,distance_matrix)
+    n_h = 0;
+    used = zeros(1,size(distance_matrix,1));
+    for i=1:size(h,1)
+        nodes = h{i,2};
+        used_node = 0;
+        for node = nodes
+            if used(node)
+                used_node = 1;
+                break;
+            end
+        end
+        if ~used_node
+            n_h = n_h + 1;
+            h{i,3} = n_h;
+            used(nodes) = 1;
         end
     end
 end
 
 % return boundary matrix and distance matrix for input data
-function [distance_matrix,boundary_matrix] = tda (window_data,radius)
+function [distance_matrix,boundary_matrix,all_h,n_h1,n_h2] = tda (window_data,radius)
     % fill in distance matrix
     distance_matrix = zeros(size(window_data,1),size(window_data,1));
     for i=1:size(window_data,1)
@@ -216,82 +231,48 @@ function [distance_matrix,boundary_matrix] = tda (window_data,radius)
     
     boundary_list = {};
     
-%     % real method???
-%     % find the earliest birth of H-1's
-%     for i=1:size(distance_matrix,1)-1
-%         [dist,j]=min(distance_matrix(i,i+1:end));
-%         if dist < radius
-%             boundary_list = [boundary_list;{[i j],dist}];
-%         end
-%     end
+    % real method???
+    % find the earliest birth of H-1's
+    % mark all vertices as unused
+    [h0,h1,h2] = distance_matrix_to_list (distance_matrix);
+    h1 = sortrows(h1,1);
+    h2 = sortrows(h2,1);
 
-    % fake method???
-    % find the birth of H-1's
-    for i=1:size(distance_matrix,1)-1
-        for j=i+1:size(distance_matrix,1)
-            dist=distance_matrix(i,j);
-            if dist < radius
-                boundary_list = [boundary_list;{[i j],dist}];
-            end
+    n_h0 = size(distance_matrix,1);
+
+    [h1,n_h1] = find_homologies(h1,distance_matrix);
+    for i=1:size(h1,1)
+        if h1{i,3}
+            h1{i,3} = h1{i,3} + n_h0;
         end
     end
-    
-    % real method??
-    % find the earliest birth of H-2's
-    % idea: for each pair of points i and j, find a third point k as
-    % arg min k (max(distance(i,j),distance(i,k),distance(j,k)))
-%     for i=1:(size(distance_matrix,1)-2)
-%         for j=i+1:size(distance_matrix,1)
-%             % extract the distances from node i to all others
-%             dist_idx = i+1:size(distance_matrix,2);
-%             dist1 = distance_matrix(i,dist_idx);
-%             %  extract the distances from node j to all others
-%             dist2 = distance_matrix(j,i+1:end);
-%             % remove node j
-%             dist1(j-i)=[];
-%             dist2(j-i)=[];
-%             dist_idx(j-i)=[];
-%     
-%             % find the minimum maximum distance from nodes i and j
-%             dist_i_j = ones(1,numel(dist1)) * distance_matrix(i,j);
-%             [dist,k_idx]=min(max([dist1;dist2;dist_i_j]));
-%     
-%             % add to boundary list
-%             boundary_list = [boundary_list;{[i j dist_idx(k_idx)],dist}];
-%         end
-%     end
 
-    % fake method??
-    % find the earliest birth of H-2's
-    % idea: for each pair of points i and j, find a third point k as
-    for i=1:(size(distance_matrix,1)-2)
-        for j=i+1:(size(distance_matrix,1)-1)
-            for k=j+1:(size(distance_matrix,1))
-                % add to boundary list
-                dist = max([distance_matrix(i,j),distance_matrix(i,k),distance_matrix(j,k)]);
-                boundary_list = [boundary_list;{[i j k],dist}];
-            end
+    [h2,n_h2] = find_homologies(h2,distance_matrix);
+    for i=1:size(h2,1)
+        if h2{i,3}
+            h2{i,3} = h2{i,3} + n_h0 + n_h1;
         end
     end
-    
+
     % make the boundary matrix
-    n_points = size(distance_matrix,1);
-    n_h0_homologies = n_points;
-    n_h1_homologies = (n_points^2-n_points)/2;
-    n_h2_homologies = (n_points^3-3*n_points^2+2*n_points)/6;
-
-    boundary_matrix = zeros(n_h0_homologies+n_h1_homologies,...
-                            n_h1_homologies+n_h2_homologies);
+    boundary_matrix = zeros(n_h0+n_h1,...
+                            n_h1+n_h2);
     
+    all_h = cat(1,h0,h1,h2);
+
     % populate the boundary matrix
-    for i=1:size(boundary_list,1)
-        points1 = boundary_list{i,1};
-        for j=1:size(boundary_list,1)
-            points2 = boundary_list{j,1};
-            if numel(points1) < numel(points2) && all(ismember(points1,points2))
-                enum1 = find_enumeration_from_points (points1,n_points);
-                enum2 = find_enumeration_from_points (points2,n_points);
-                boundary_matrix(enum1,enum2)=1;
+    for i=1:size(all_h,1)
+        if all_h{i,3}
+            points1 = all_h{i,2};
+            for j=1:size(all_h,1)
+                if all_h{j,3}
+                    points2 = all_h{j,2};
+                    if numel(points1) < numel(points2) && all(ismember(points1,points2))
+                        enum1 = all_h{i,3};
+                        enum2 = all_h{j,3};
+                        boundary_matrix(enum1,enum2)=1;
+                    end
+                end
             end
         end
     end
@@ -375,7 +356,7 @@ end
 
 % read dataset
 function [time_vibration,vibration_signal,...
-        time_pin,pin_position,vibration_signal_samples] = read_data (sample_rate,dim,plotit)
+        time_pin,pin_position,vibration_signal_samples,start_time] = read_data (sample_rate,dim,plotit,plottime)
     % read the input data
     [time_vibration,vibration_signal,...
         time_pin,pin_position] = read_and_clean_dataset('data_6_with_FFT.json', ...
@@ -388,18 +369,24 @@ function [time_vibration,vibration_signal,...
         vibration_signal_samples(i,:) = vibration_signal(i:i+dim-1);
     end
     
+    pts = find(time_vibration>plottime);
+    pts = pts(1);
+
     if plotit
         % plot for sanity check
         figure;
         hold on;
         title('training data');
-        plot(time_vibration,vibration_signal,'g');
+        plot(time_vibration(1:pts),vibration_signal(1:pts),'g');
         yyaxis right
-        plot(time_pin,pin_position,'r');
+        plot(time_pin(1:pts),pin_position(1:pts),'r');
         title('training data');
-        legend({"vibration","pin position"});
+        %legend({"vibration","pin position"});
         xlabel('time (s)');
-        hold off;
+        %hold off;
         drawnow;
+        yyaxis left
     end
+
+    start_time = time_vibration(1);
 end

@@ -15,10 +15,12 @@ function [] = main ()
     use_higher_sample_rate_for_inputs = 0;
     radius = 1e6;
     tda_window = .01; % in seconds
+
+    sim_time = 5.5;
     
     % read and plot data
     [time_vibration,vibration_signal,...
-            time_pin,pin_position,vibration_signal_samples,start_time] = read_data (sample_rate,dim,1,5.5);
+            time_pin,pin_position,vibration_signal_samples,start_time] = read_data (sample_rate,dim,1,sim_time);
     
     % extract a window for TDA
     number_of_samples_in_window = sample_rate * tda_window;
@@ -28,7 +30,7 @@ function [] = main ()
     n_windows = (size(vibration_signal_samples,1)-number_of_samples_in_window+1);
 
     % overridden to perform a partial run
-    n_windows = 5.5 * sample_rate;
+    n_windows = sim_time * sample_rate;
 
     longest_distances = zeros(n_windows,n);
     for window_number = 1:n_windows

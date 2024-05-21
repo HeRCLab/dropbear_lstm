@@ -70,6 +70,7 @@ end
 function [] = process_dropbear_data ()
     % set up parameters
     n = 1; % number of longest persistances
+
     sample_rate = 25600/8;
     dim = 2;
     use_higher_sample_rate_for_inputs = 0;
@@ -91,7 +92,7 @@ function [] = process_dropbear_data ()
     n_windows = (size(vibration_signal_samples,1)-number_of_samples_in_window+1);
 
     % overridden to perform a partial run
-    n_windows = floor(5.5 * sample_rate);
+    n_windows = sim_time * sample_rate;
 
     longest_distances = zeros(n_windows,n);
     for window_number = 1:n_windows
@@ -107,7 +108,7 @@ function [] = process_dropbear_data ()
         %longest_distances(window_number,:) = longest_persistance(distance_matrix,boundary_matrix2,n,n_h1,all_h);
 
         if mod(window_number,100)
-            plot((1:window_number)./sample_rate+start_time,longest_distances(1:window_number),'r');
+            plot((1:window_number)./sample_rate+start_time,longest_distances(1:window_number),'m','Marker','None');
             hold on;
             drawnow;
         end

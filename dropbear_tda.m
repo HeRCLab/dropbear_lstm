@@ -1,5 +1,40 @@
 function [] = main ()
+
+    process_dropbear_data();
+    return
+
+    data = [0.91322074, 0.93506856;...
+           0.02695392, 0.34799628;...
+           0.32018781, 0.9919    ;...
+           0.76357508, 0.08647722;...
+           0.92744649, 0.52848275];
+           
+    ripser_output = [0.        , 0.4068346 ;...
+           0.        , 0.47140506;...
+           0.        , 0.59574986;...
+           0.        , 0.7075296 ;...
+           0.        ,        inf;...
+           0.78166676, 0.91840202];
     
+    scatter(data(:,1),data(:,2));
+
+    [distance_matrix,boundary_matrix1,boundary_matrix2,h0,h1,h2] = tda (data,1e38);
+    persistance = get_persistances(boundary_matrix1,boundary_matrix2,h0,h1,h2);
+
+    % % decode the ripser results
+    % decoded = cell(size(ripser_output));
+    % for i=1:size(ripser_output,1)
+    %     for j=1:size(all_h,1)
+    %         if ripser_output(i,1)>0 && abs(ripser_output(i,1)-all_h{j})<1e-5
+    %             decoded{i,1}=all_h{j,2};
+    %         end
+    %         if ripser_output(i,2)>0 && abs(ripser_output(i,2)-all_h{j})<1e-5
+    %             decoded{i,2}=all_h{j,2};
+    %         end
+    %     end
+    % end
+
+end
 %     n_points=6;
 %     n_homologies = n_points + (n_points^2-n_points)/2 + ...
 %                 (n_points^3-3*n_points^2+2*n_points)/6;
@@ -8,17 +43,45 @@ function [] = main ()
 %     end
 %     return;
 
+function [persistance] = get_persistances(boundary_matrix1,boundary_matrix2,h0,h1,h2)
+    persistance = [];
+
+    for i=1:size(boundary_matrix1,2)
+        ones = find(boundary_matrix1(:,i)==1);
+        if ~isempty(ones)
+            birth = 0;%ones(end);
+            death = h1{i,1};
+            persistance = [persistance;birth,death];
+        end
+    end
+
+    for i=1:size(boundary_matrix2,2)
+        ones = find(boundary_matrix2(:,i)==1);
+        if ~isempty(ones)
+            birth = h1{ones(end),1};
+            death = h2{i,1};
+            if birth ~= death
+                persistance = [persistance;birth,death];
+            end
+        end
+    end
+end
+
+function [] = process_dropbear_data ()
     % set up parameters
     n = 1; % number of longest persistances
-    sample_rate = 1000;
+    sample_rate = 25600/8;
     dim = 2;
     use_higher_sample_rate_for_inputs = 0;
     radius = 1e6;
-    tda_window = .01; % in seconds
-    
+
+    tda_window = .04; % in seconds
+    delay = .25 / 17.7;
+    cutoff = 150;
+
     % read and plot data
     [time_vibration,vibration_signal,...
-            time_pin,pin_position,vibration_signal_samples,start_time] = read_data (sample_rate,dim,1,5.5);
+            time_pin,pin_position,vibration_signal_samples,start_time,sample_rate] = read_data (sample_rate,dim,1,5.5,delay,cutoff);
     
     % extract a window for TDA
     number_of_samples_in_window = sample_rate * tda_window;
@@ -28,7 +91,7 @@ function [] = main ()
     n_windows = (size(vibration_signal_samples,1)-number_of_samples_in_window+1);
 
     % overridden to perform a partial run
-    n_windows = 5.5 * sample_rate;
+    n_windows = floor(5.5 * sample_rate);
 
     longest_distances = zeros(n_windows,n);
     for window_number = 1:n_windows
@@ -37,9 +100,12 @@ function [] = main ()
         window_data = vibration_signal_samples(sample_range_in_window,:);
 
         % perform TDA
-        [distance_matrix,boundary_matrix,all_h,n_h1,n_h2] = tda (window_data,radius);
+        [distance_matrix,boundary_matrix1,boundary_matrix2,all_h,n_h1,n_h2] = tda (window_data,radius);
+
         % extract features
-        longest_distances(window_number,:) = longest_persistance(distance_matrix,boundary_matrix,n,n_h1,all_h);
+        longest_distances(window_number,:) = longest_persistance(distance_matrix,boundary_matrix1,n,n_h1,all_h);
+        %longest_distances(window_number,:) = longest_persistance(distance_matrix,boundary_matrix2,n,n_h1,all_h);
+
         if mod(window_number,100)
             plot((1:window_number)./sample_rate+start_time,longest_distances(1:window_number),'r');
             hold on;
@@ -189,7 +255,7 @@ function [h0,h1,h2] = distance_matrix_to_list (dist_matrix)
     for i=1:n-2
         for j=i+1:n-1
             for k=j+1:n
-                h2{cnt,1} = max([dist_matrix(i,j),dist_matrix(i,k),dist_matrix(j,k)]);;
+                h2{cnt,1} = max([dist_matrix(i,j),dist_matrix(i,k),dist_matrix(j,k)]);
                 h2{cnt,2} = [i,j,k];
                 h2{cnt,3} = 0;
                 cnt=cnt+1;
@@ -199,84 +265,92 @@ function [h0,h1,h2] = distance_matrix_to_list (dist_matrix)
 
 end
 
+function [h0,h1,h2] = create_back_refs(h0,h1,h2)
+    % back-reference to h1
+    for i=1:size(h1,1)
+        h1{i,4} = h1{i,2};
+    end
+
+    for i=1:size(h2,1)
+        members=h2{i,2};
+        back_refs=[0,0,0];
+        cnt=1;
+        for j=1:size(h1,1)
+            subset=h1{j,2};
+            if all(ismember(subset,members))
+                back_refs(cnt)=j;
+                cnt=cnt+1;
+                if cnt==4
+                    break;
+                end
+            end
+        end
+        h2{i,4} = back_refs;
+    end
+end
+
 function [h,n_h] = find_homologies(h,distance_matrix)
+
     n_h = 0;
+
+    % mark all as valid
+    for i=1:size(h,1)
+        n_h = n_h + 1;
+        h{i,3} = n_h;
+    end
+
+    return
+
     used = zeros(1,size(distance_matrix,1));
     for i=1:size(h,1)
         nodes = h{i,2};
-        used_node = 0;
+        birth_time = h{i,1};
+        already_born = 0;
         for node = nodes
-            if used(node)
-                used_node = 1;
-                break;
+            if birth_time <= used(node)
+                already_born = already_born + 1;
+                %break;
             end
         end
-        if ~used_node
+        if already_born < numel(nodes)
             n_h = n_h + 1;
             h{i,3} = n_h;
-            used(nodes) = 1;
+            used(nodes) = birth_time;
         end
     end
 end
 
-% return boundary matrix and distance matrix for input data
-function [distance_matrix,boundary_matrix,all_h,n_h1,n_h2] = tda (window_data,radius)
-    % fill in distance matrix
-    distance_matrix = zeros(size(window_data,1),size(window_data,1));
-    for i=1:size(window_data,1)
-        for j=1:size(window_data,1)
-            distance_matrix(i,j) = norm(window_data(i,:)-window_data(j,:));
-        end
-    end
-    
-    boundary_list = {};
-    
-    % real method???
-    % find the earliest birth of H-1's
-    % mark all vertices as unused
-    [h0,h1,h2] = distance_matrix_to_list (distance_matrix);
-    h1 = sortrows(h1,1);
-    h2 = sortrows(h2,1);
+function [boundary_matrix] = generate_boundary (h1,h2)
+    % allocate the boundary matrix
+    boundary_matrix = zeros(size(h1,1),size(h2,1));
 
-    n_h0 = size(distance_matrix,1);
-
-    [h1,n_h1] = find_homologies(h1,distance_matrix);
-    for i=1:size(h1,1)
-        if h1{i,3}
-            h1{i,3} = h1{i,3} + n_h0;
-        end
-    end
-
-    [h2,n_h2] = find_homologies(h2,distance_matrix);
     for i=1:size(h2,1)
-        if h2{i,3}
-            h2{i,3} = h2{i,3} + n_h0 + n_h1;
+        for j=h2{i,4}
+            boundary_matrix(j,i)=1;
         end
     end
 
-    % make the boundary matrix
-    boundary_matrix = zeros(n_h0+n_h1,...
-                            n_h1+n_h2);
-    
-    all_h = cat(1,h0,h1,h2);
+    return
 
     % populate the boundary matrix
-    for i=1:size(all_h,1)
-        if all_h{i,3}
-            points1 = all_h{i,2};
-            for j=1:size(all_h,1)
-                if all_h{j,3}
-                    points2 = all_h{j,2};
-                    if numel(points1) < numel(points2) && all(ismember(points1,points2))
-                        enum1 = all_h{i,3};
-                        enum2 = all_h{j,3};
+    for i=1:size(h1,1)
+        if h1{i,3}
+            points1 = h1{i,2};
+            for j=1:size(h2,1)
+                if h2{j,3}
+                    points2 = h2{j,2};
+                    if all(ismember(points1,points2))
+                        enum1 = h1{i,3};
+                        enum2 = h2{j,3};
                         boundary_matrix(enum1,enum2)=1;
                     end
                 end
             end
         end
     end
-    
+end
+
+function boundary_matrix = reduce_boundary(boundary_matrix)
     changed=1;
     
     while changed
@@ -301,16 +375,74 @@ function [distance_matrix,boundary_matrix,all_h,n_h1,n_h2] = tda (window_data,ra
             end
         end
     end
+    
+end
+
+% return boundary matrix and distance matrix for input data
+function [distance_matrix,...
+    boundary_matrix1_reduced,...
+    boundary_matrix2_reduced,...
+    h0,h1,h2,...
+    n_h1,...
+    n_h2] = tda (window_data,radius)
+
+    % fill in distance matrix
+    distance_matrix = zeros(size(window_data,1),size(window_data,1));
+    for i=1:size(window_data,1)
+        for j=1:size(window_data,1)
+            distance_matrix(i,j) = norm(window_data(i,:)-window_data(j,:));
+        end
+    end
+    
+    boundary_list = {};
+    
+    % real method???
+    % find the earliest birth of H-1's
+    % mark all vertices as unused
+    [h0,h1,h2] = distance_matrix_to_list (distance_matrix);
+    h1 = sortrows(h1,1);
+    h2 = sortrows(h2,1);
+
+    [h0,h1,h2]=create_back_refs(h0,h1,h2);
+
+    n_h0 = size(distance_matrix,1);
+
+    [h1,n_h1] = find_homologies(h1,distance_matrix);
+    % for i=1:size(h1,1)
+    %     if h1{i,3}
+    %         h1{i,3} = h1{i,3} + n_h0;
+    %     end
+    % end
+
+    [h2,n_h2] = find_homologies(h2,distance_matrix);
+    % for i=1:size(h2,1)
+    %     if h2{i,3}
+    %         h2{i,3} = h2{i,3} + n_h0 + n_h1;
+    %     end
+    % end
+
+    %all_h = cat(1,h0,h1,h2);
+
+    boundary_matrix1 = generate_boundary (h0,h1);
+    boundary_matrix2 = generate_boundary (h1,h2);
+    
+    boundary_matrix1_reduced = reduce_boundary (boundary_matrix1);
+    boundary_matrix2_reduced = reduce_boundary (boundary_matrix2);
+
 end
 
 % read and preprocess data
 function [time_vibration,vibration_signal,...
-    time_pin,pin_position] = read_and_clean_dataset(filename,...
+    time_pin,pin_position,sample_rate] = read_and_clean_dataset(filename,...
                                                     sample_rate,...
                                                     use_higher_sample_rate_for_inputs)
     % read data and compute sample rates
     data = jsondecode(fileread(filename));
     
+    if sample_rate==0
+        sample_rate = data.accelerometer_sample_rate;
+    end
+
     % native sample rates computed here
     %vibration_sample_rate = numel(data.acceleration_data) / (data.time_acceleration_data(end) - data.time_acceleration_data(1));
     %pin_sample_rate = numel(data.measured_pin_location) / (data.measured_pin_location_tt(end) - data.measured_pin_location_tt(1));
@@ -341,6 +473,7 @@ function [time_vibration,vibration_signal,...
     else
         sample_rate_vib = sample_rate;
     end
+
     time_vibration = [data.time_acceleration_data(1):...
                         1/sample_rate_vib:...
                         data.time_acceleration_data(end)];
@@ -349,24 +482,41 @@ function [time_vibration,vibration_signal,...
                         1/sample_rate:...
                         data.measured_pin_location_tt(end)];
     
-    % interpolate signals
+    % interpolate signals (if needed)
     vibration_signal = interp1(data.time_acceleration_data,data.acceleration_data,time_vibration);
-    pin_position = interp1(data.measured_pin_location_tt,data.measured_pin_location,time_pin);
+    pin_position = interp1(data.measured_pin_location_tt,data.measured_pin_location,time_vibration);
+
 end
 
 % read dataset
 function [time_vibration,vibration_signal,...
-        time_pin,pin_position,vibration_signal_samples,start_time] = read_data (sample_rate,dim,plotit,plottime)
+        time_pin,pin_position,vibration_signal_samples,start_time,sample_rate] = read_data (sample_rate,dim,plotit,plottime,delay,cutoff)
+
     % read the input data
     [time_vibration,vibration_signal,...
-        time_pin,pin_position] = read_and_clean_dataset('data_6_with_FFT.json', ...
+        time_pin,pin_position,sample_rate] = read_and_clean_dataset('data_6_with_FFT.json', ...
                                                         sample_rate,...
                                                         0);
     
+    % apply FLP
+    if cutoff ~= 0
+        vibration_signal = lowpass(vibration_signal,cutoff,sample_rate);
+    end
+
+    % TODO: normalize data and apply LPF and allow for no subsampling
+    % and allow for window stride
+    
+    if delay ~= 0
+        sample_rate = numel(time_pin)/(time_pin(end) - time_pin(1));
+        stride = floor(sample_rate * delay);
+    else
+        stride = 1;
+    end
+
     % convert input data into moving window datapoints
     vibration_signal_samples = zeros(size(vibration_signal,2)-1,dim);
-    for i=1:size(vibration_signal_samples,1)-1
-        vibration_signal_samples(i,:) = vibration_signal(i:i+dim-1);
+    for i=1:size(vibration_signal_samples,1)-stride*dim-1
+        vibration_signal_samples(i,:) = vibration_signal(i:stride:i+stride*dim-1);
     end
     
     pts = find(time_vibration>plottime);

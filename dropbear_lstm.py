@@ -25,8 +25,11 @@ def parse_args():
 
 def create_model (units,batchsize):
     model = Sequential()
-    model.add(LSTM(units,input_shape=(1,1),batch_size=batchsize,stateful=True))
+    model.add(LSTM(units,input_shape=(16,1),batch_size=1,stateful=True))
+    model.add(LSTM(units,input_shape=(16,1),batch_size=1,stateful=True))
+    model.add(LSTM(units,input_shape=(16,1),batch_size=1,stateful=True))
     model.add(Dense(1))
+    model.save("foo.keras")
     model.compile(loss='mse',optimizer='adam')
     return model
 

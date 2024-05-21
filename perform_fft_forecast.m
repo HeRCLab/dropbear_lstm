@@ -3,17 +3,17 @@ function signal_pred_puja = perform_fft_forecast (x,x_sub,signal,signal_sub,mode
     detrend = 0;
 
     % plot spectum of signal
-%     figure;
-%     spectrum = fft(signal_sub);
-%     spectrum = spectrum(1:floor(numel(spectrum)/2));
-%     spectrum = abs(spectrum);
-%     freqs = (1:numel(spectrum)) .* ((model_sample_rate/2)/numel(spectrum));
-%     plot(freqs,spectrum);
-%     hold on;
-%     xlabel('Hz');
-%     ylabel('Power (dB)');
-%     title('Spectrum of subsampled input signal');
-%     hold off;
+    figure;
+    spectrum = fft(signal_sub);
+    spectrum = spectrum(1:floor(numel(spectrum)/2));
+    spectrum = abs(spectrum);
+    freqs = (1:numel(spectrum)) .* ((model_sample_rate/2)/numel(spectrum));
+    plot(freqs,spectrum);
+    hold on;
+    xlabel('Hz');
+    ylabel('Power (dB)');
+    title('Spectrum of subsampled input signal');
+    hold off;
 
     % apply Puja approach
 

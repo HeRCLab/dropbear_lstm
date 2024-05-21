@@ -138,8 +138,8 @@ end
 prediction_time = ceil(prediction_time_seconds * sample_rate);
 
 % compute the FFT window (forecase time) in samples
-%fft_window = ceil(fft_window_seconds * model_sample_rate);
-%perform_fft_forecast (x,x_sub,signal,signal_sub,model_sample_rate,fft_window,fft_step,fft_window,nonstationarity_time);
+fft_window = ceil(fft_window_seconds * model_sample_rate);
+perform_fft_forecast (x,x_sub,signal,signal_sub,model_sample_rate,fft_window,fft_step,fft_window,nonstationarity_time);
 
 %return;
 

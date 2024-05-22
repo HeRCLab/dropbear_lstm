@@ -1,7 +1,7 @@
 function [] = main ()
 
-    process_dropbear_data();
-    return
+    %process_dropbear_data();
+    %return
 
     data = [0.91322074, 0.93506856;...
            0.02695392, 0.34799628;...
@@ -20,6 +20,10 @@ function [] = main ()
 
     [distance_matrix,boundary_matrix1,boundary_matrix2,h0,h1,h2] = tda (data,1e38);
     persistance = get_persistances(boundary_matrix1,boundary_matrix2,h0,h1,h2);
+
+    % extract features
+    longest_distances1 = longest_persistance(distance_matrix,boundary_matrix1,h0,h1,1);
+    longest_distances2 = longest_persistance(distance_matrix,boundary_matrix2,h1,h2,1);
 
     % % decode the ripser results
     % decoded = cell(size(ripser_output));
@@ -71,7 +75,7 @@ function [] = process_dropbear_data ()
     % set up parameters
     n = 1; % number of longest persistances
 
-    sample_rate = 25600/8;
+    sample_rate = 25600/32;
     dim = 2;
     use_higher_sample_rate_for_inputs = 0;
     radius = 1e6;
@@ -79,6 +83,8 @@ function [] = process_dropbear_data ()
     tda_window = .04; % in seconds
     delay = .25 / 17.7;
     cutoff = 150;
+
+    sim_time = 0.4;
 
     % read and plot data
     [time_vibration,vibration_signal,...
@@ -92,7 +98,7 @@ function [] = process_dropbear_data ()
     n_windows = (size(vibration_signal_samples,1)-number_of_samples_in_window+1);
 
     % overridden to perform a partial run
-    n_windows = sim_time * sample_rate;
+    n_windows = floor(sim_time * sample_rate);
 
     longest_distances = zeros(n_windows,n);
     for window_number = 1:n_windows
@@ -101,11 +107,34 @@ function [] = process_dropbear_data ()
         window_data = vibration_signal_samples(sample_range_in_window,:);
 
         % perform TDA
-        [distance_matrix,boundary_matrix1,boundary_matrix2,all_h,n_h1,n_h2] = tda (window_data,radius);
+        [distance_matrix,boundary_matrix1,boundary_matrix2,h0,h1,h2] = tda (window_data,radius);
 
         % extract features
-        longest_distances(window_number,:) = longest_persistance(distance_matrix,boundary_matrix1,n,n_h1,all_h);
-        %longest_distances(window_number,:) = longest_persistance(distance_matrix,boundary_matrix2,n,n_h1,all_h);
+        longest_distances1 = longest_persistance(distance_matrix,boundary_matrix1,h0,h1,1);
+        longest_distances2 = longest_persistance(distance_matrix,boundary_matrix2,h1,h2,1);
+
+        % merge
+        n1=1;
+        n2=1;
+        n=1;
+        while n1<=numel(longest_distances1) && n2<=numel(longest_distances2)
+            if longest_distances1(n1) > longest_distances1(n2)
+                longest_distances(window_number,n) = longest_distances1(n1);
+                n1=n1+1;
+            else
+                longest_distances(window_number,n) = longest_distances1(n2);
+                n2=n2+1;
+            end
+            n = n+1;
+        end
+        for i=n1:numel(longest_distances1)
+            longest_distances(window_number,n) = longest_distances1(i);
+            n=n+1;
+        end
+        for i=n2:numel(longest_distances1)
+            longest_distances(window_number,n) = longest_distances2(i);
+            n=n+1;
+        end
 
         if mod(window_number,100)
             plot((1:window_number)./sample_rate+start_time,longest_distances(1:window_number),'m','Marker','None');
@@ -124,109 +153,50 @@ function [] = process_dropbear_data ()
 
 end
 
-function longest_distances = longest_persistance(distance_matrix,boundary_matrix,n,n_h1,all_h)
+function longest_distances = longest_persistance(distance_matrix,boundary_matrix,h1,h2,n)
 
     longest_distances = zeros(1,n);
-    longest_enums = zeros(1,n);
+    
+    for i=1:size(boundary_matrix,2)
+        col = boundary_matrix(:,i);
+        idx = find(col);
+        start = 0;
+        if ~isempty(idx)
+            start=idx(end);
+        end
 
-    n_points = size(distance_matrix,1);
-    n_h = max(cell2mat(all_h(:,3)));
+         tmp=find(boundary_matrix(:,i));
+        if ~isempty(tmp)
+            % get enum ID of birth
+            birth_idx = tmp(end);
+            % get index in the distance table of death enum
+            tmp=find(cell2mat(h2(:,3))==i);
+            idx_in_distance_table = tmp(end);
+            % lookup death time
+            death_time = cell2mat(h2(idx_in_distance_table,1));
 
-    % iterate over all H0, H1, and H2 homologies
-    for i = 1:n_h
-        death = find_death(boundary_matrix,distance_matrix,i,n_points,n_h1,all_h);
-        birth = find_birth(boundary_matrix,distance_matrix,i,n_points,all_h);
-        persistance = death - birth;
+            % get index in the distance table of birth enum
+            tmp=find(cell2mat(h1(:,3))==birth_idx);
+            idx_in_distance_table = tmp(end);
+
+            % lookup birth time
+            birth_time = cell2mat(h1(idx_in_distance_table,1));
+
+            persistance = death_time-birth_time;
+        end
 
         for j=1:n
             if persistance > longest_distances(j)
                 longest_distances = [longest_distances(1,1:j-1),persistance,longest_distances(1,j:n-1)];
-                longest_enums = [longest_enums(1,1:j-1),i,longest_enums(1,j:n-1)];
                 break;
             end
         end
     end
 
-end
-
-% find the birth time of a given homology
-function birth_time = find_birth (boundary_matrix,distance_matrix,enum,n_points,all_h)
-    % find the points for this homology
-    points = find_points_from_enumeration (enum,n_points,all_h);
-
-    if numel(points)==1
-        birth_time=0;
-    elseif numel(points)==2
-        birth_time=distance_matrix(points(1),points(2));
-    else
-        birth_time = max([distance_matrix(points(1),points(2)),...
-            distance_matrix(points(1),points(3)),...
-            distance_matrix(points(2),points(3))]);
-    end
 end
 
 % find the death time of a given homology
 % assume a time horizon of the largest distance
-function death_time = find_death (boundary_matrix,distance_matrix,enum,n_points,n_h1,all_h)
-
-    if enum > n_points + n_h1
-        % H2's always die at the horizon
-        death_time = max(max(distance_matrix));
-        return;
-    else
-        % check to see if this enum was terminated by another
-        % for each column with a 1 for row 'enum'...
-        overriding_homology = -1;
-        for col_num = find(boundary_matrix(enum,:))
-            % check if the row corresponds to the bottom 1
-            if max(boundary_matrix(enum+1:end,col_num)) == 0
-                overriding_homology = col_num;
-                break;
-            end
-        end
-    end
-
-    if overriding_homology == -1
-        death_time = max(max(distance_matrix));
-        return;
-    end
-
-    % find the points for this homology
-    points = find_points_from_enumeration (overriding_homology,n_points,all_h);
-
-    assert(numel(points)>1);
-
-    if numel(points) == 2
-        % H1
-        death_time = distance_matrix(points(1),points(2));
-    else
-        % H2
-        death_time = max([distance_matrix(points(1),points(2)),...
-            distance_matrix(points(1),points(3)),...
-            distance_matrix(points(2),points(3))]);
-    end
-end
-
-% converts a scalar index into a set of points
-function points = find_points_from_enumeration (enum,n_points,all_h)
-   for i=1:size(all_h,1)
-       if all_h{i,3} == enum
-           points = all_h{i,2};
-           break;
-       end
-   end
-end
-
-% converts a set of points into a scalar index
-function enum = find_enumeration_from_points (points,n_points,all_h)
-    for i=1:size(all_h,1)
-       if all_h{i,2} == points
-           num = all_h{i,3};
-           break;
-       end
-    end
-end
-
 function [h0,h1,h2] = distance_matrix_to_list (dist_matrix)
     n = size(dist_matrix,1);
     n_pairs = (n^2-n)/2;
@@ -247,7 +217,7 @@ function [h0,h1,h2] = distance_matrix_to_list (dist_matrix)
         for j=i+1:n
             h1{cnt,1} = dist_matrix(i,j);
             h1{cnt,2} = [i,j];
-            h1{cnt,3} = 0;
+            h1{cnt,3} = cnt;
             cnt=cnt+1;
         end
     end
@@ -258,7 +228,7 @@ function [h0,h1,h2] = distance_matrix_to_list (dist_matrix)
             for k=j+1:n
                 h2{cnt,1} = max([dist_matrix(i,j),dist_matrix(i,k),dist_matrix(j,k)]);
                 h2{cnt,2} = [i,j,k];
-                h2{cnt,3} = 0;
+                h2{cnt,3} = cnt;
                 cnt=cnt+1;
             end
         end
@@ -287,37 +257,6 @@ function [h0,h1,h2] = create_back_refs(h0,h1,h2)
             end
         end
         h2{i,4} = back_refs;
-    end
-end
-
-function [h,n_h] = find_homologies(h,distance_matrix)
-
-    n_h = 0;
-
-    % mark all as valid
-    for i=1:size(h,1)
-        n_h = n_h + 1;
-        h{i,3} = n_h;
-    end
-
-    return
-
-    used = zeros(1,size(distance_matrix,1));
-    for i=1:size(h,1)
-        nodes = h{i,2};
-        birth_time = h{i,1};
-        already_born = 0;
-        for node = nodes
-            if birth_time <= used(node)
-                already_born = already_born + 1;
-                %break;
-            end
-        end
-        if already_born < numel(nodes)
-            n_h = n_h + 1;
-            h{i,3} = n_h;
-            used(nodes) = birth_time;
-        end
     end
 end
 
@@ -383,9 +322,7 @@ end
 function [distance_matrix,...
     boundary_matrix1_reduced,...
     boundary_matrix2_reduced,...
-    h0,h1,h2,...
-    n_h1,...
-    n_h2] = tda (window_data,radius)
+    h0,h1,h2] = tda (window_data,radius)
 
     % fill in distance matrix
     distance_matrix = zeros(size(window_data,1),size(window_data,1));
@@ -408,21 +345,8 @@ function [distance_matrix,...
 
     n_h0 = size(distance_matrix,1);
 
-    [h1,n_h1] = find_homologies(h1,distance_matrix);
-    % for i=1:size(h1,1)
-    %     if h1{i,3}
-    %         h1{i,3} = h1{i,3} + n_h0;
-    %     end
-    % end
-
-    [h2,n_h2] = find_homologies(h2,distance_matrix);
-    % for i=1:size(h2,1)
-    %     if h2{i,3}
-    %         h2{i,3} = h2{i,3} + n_h0 + n_h1;
-    %     end
-    % end
-
-    %all_h = cat(1,h0,h1,h2);
+    n_h1 = size(h1,1);
+    n_h2 = size(h2,1);
 
     boundary_matrix1 = generate_boundary (h0,h1);
     boundary_matrix2 = generate_boundary (h1,h2);

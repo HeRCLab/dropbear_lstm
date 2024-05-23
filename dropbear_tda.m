@@ -113,34 +113,38 @@ function [] = process_dropbear_data ()
         longest_distances1 = longest_persistance(distance_matrix,boundary_matrix1,h0,h1,1);
         longest_distances2 = longest_persistance(distance_matrix,boundary_matrix2,h1,h2,1);
 
-        % merge
-        n1=1;
-        n2=1;
-        n=1;
-        while n1<=numel(longest_distances1) && n2<=numel(longest_distances2)
-            if longest_distances1(n1) > longest_distances1(n2)
-                longest_distances(window_number,n) = longest_distances1(n1);
-                n1=n1+1;
-            else
-                longest_distances(window_number,n) = longest_distances1(n2);
-                n2=n2+1;
-            end
-            n = n+1;
-        end
-        for i=n1:numel(longest_distances1)
-            longest_distances(window_number,n) = longest_distances1(i);
-            n=n+1;
-        end
-        for i=n2:numel(longest_distances1)
-            longest_distances(window_number,n) = longest_distances2(i);
-            n=n+1;
-        end
+        % assume longest persistance
+        longest_distances(window_number,n) = max(longest_distances1,longest_distances2);
+        
 
-        if mod(window_number,100)
+        % % merge
+        % n1=1;
+        % n2=1;
+        % n=1;
+        % while n1<=numel(longest_distances1) && n2<=numel(longest_distances2)
+        %     if longest_distances1(n1) > longest_distances1(n2)
+        %         longest_distances(window_number,n) = longest_distances1(n1);
+        %         n1=n1+1;
+        %     else
+        %         longest_distances(window_number,n) = longest_distances1(n2);
+        %         n2=n2+1;
+        %     end
+        %     n = n+1;
+        % end
+        % for i=n1:numel(longest_distances1)
+        %     longest_distances(window_number,n) = longest_distances1(i);
+        %     n=n+1;
+        % end
+        % for i=n2:numel(longest_distances1)
+        %     longest_distances(window_number,n) = longest_distances2(i);
+        %     n=n+1;
+        % end
+
+        %if mod(window_number,100)
             plot((1:window_number)./sample_rate+start_time,longest_distances(1:window_number),'m','Marker','None');
             hold on;
             drawnow;
-        end
+        %end
     end
 
     xlabel('time (s)');
@@ -291,8 +295,80 @@ function [boundary_matrix] = generate_boundary (h1,h2)
 end
 
 function boundary_matrix = reduce_boundary(boundary_matrix)
-    changed=1;
     
+    %v3
+    % boundary_matrix = boundary_matrix';
+    % 
+    % % reduce the boundary matrix
+    % %for i=2:size(boundary_matrix,2) % for each column...
+    % for i=size(boundary_matrix,2):-1:2 % for each column...
+    %     changed=1;
+    %     while changed
+    %         changed = 0;
+    % 
+    %         one_locs_master = find(boundary_matrix(:,i)); % find the row of lowest 1
+    %         if isempty(one_locs_master)
+    %             break;
+    %         else
+    %             lowest_master = one_locs_master(end);
+    %             % check columns to the left if there's a match
+    %             for j=1:i-1
+    %                 one_locs_slave = find(boundary_matrix(:,j));
+    %                 if ~isempty(one_locs_slave)
+    %                     lowest_slave = one_locs_slave(end);
+    %                     if lowest_slave == i
+    %                         boundary_matrix(:,i) = zeros(size(boundary_matrix,1),1);
+    %                         break;
+    %                     end
+    %                     if lowest_master == lowest_slave % apply column transformation
+    %                         boundary_matrix(:,i) = double(xor(boundary_matrix(:,j),boundary_matrix(:,i)));
+    %                         changed=1;
+    %                         break;
+    %                     end
+    %                 end
+    %             end
+    %         end
+    %     end
+    % end
+    % 
+    % boundary_matrix = boundary_matrix';
+    % return
+    
+    %v2
+    % reduce the boundary matrix
+    for i=2:size(boundary_matrix,2) % for each column...
+        changed=1;
+        while changed
+            changed = 0;
+
+            one_locs_master = find(boundary_matrix(:,i)); % find the row of lowest 1
+            if isempty(one_locs_master)
+                break;
+            else
+                lowest_master = one_locs_master(end);
+                % check columns to the left if there's a match
+                for j=1:i-1
+                    one_locs_slave = find(boundary_matrix(:,j));
+                    if ~isempty(one_locs_slave)
+                        lowest_slave = one_locs_slave(end);
+                        if lowest_slave == i
+                            boundary_matrix(:,i) = zeros(size(boundary_matrix,1),1);
+                            break;
+                        end
+                        if lowest_master == lowest_slave % apply column transformation
+                            boundary_matrix(:,i) = double(xor(boundary_matrix(:,j),boundary_matrix(:,i)));
+                            changed=1;
+                            break;
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return
+
+    %v1
     while changed
         % reduce the boundary matrix
         changed = 0;

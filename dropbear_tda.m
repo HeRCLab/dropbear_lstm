@@ -22,8 +22,8 @@ function [] = main ()
     persistance = get_persistances(boundary_matrix1,boundary_matrix2,h0,h1,h2);
 
     % extract features
-    longest_distances1 = longest_persistance(distance_matrix,boundary_matrix1,h0,h1,1);
-    longest_distances2 = longest_persistance(distance_matrix,boundary_matrix2,h1,h2,1);
+    %longest_distances1 = longest_persistance(distance_matrix,boundary_matrix1,h0,h1,1);
+    %longest_distances2 = longest_persistance(distance_matrix,boundary_matrix2,h1,h2,1);
 
     % % decode the ripser results
     % decoded = cell(size(ripser_output));

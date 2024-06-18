@@ -1,6 +1,6 @@
 % parameters
 
-gpuDevice(1);
+%gpuDevice(1);
 
 % choose a network
 MLP = 0;
@@ -38,7 +38,7 @@ window_size = .1; % seconds
 sample_rate = 1000;
 
 % choose training time
-epochs = 1000;
+epochs = 500;
 
 [time_vibration,vibration_signal,...
     time_pin,pin_position] = read_and_clean_dataset('data_6_with_FFT.json', ...
@@ -392,6 +392,8 @@ function [input_gate,forget_gate,output_gate,modulation_gate] = extract_weights 
     num_units = size(input_weights,1)/4;
     % get values for current gate (since they are packed)
     
+    perms = [1 0 3 2];
+
     segment = perms(1);
     chunk = num_units*segment+1:num_units*(segment+1);
     forget_gate.input_weights = input_weights(chunk,:);
@@ -417,7 +419,7 @@ function [input_gate,forget_gate,output_gate,modulation_gate] = extract_weights 
     modulation_gate.bias = bias(chunk,1);
 end
 
-function [] = write_weights_to_file (myfile,recurrent_weights,input_weights_bias)
+function [] = write_weights_to_file (myfile,recurrent_weights,input_weights,bias)
 
     for i=1:size(recurrent_weights,1)
         for j=1:size(recurrent_weights,2)

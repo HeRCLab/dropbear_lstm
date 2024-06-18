@@ -381,7 +381,6 @@ function [time_vibration,vibration_signal,...
 end
 
 function [input_gate,forget_gate,output_gate,modulation_gate] = extract_weights (layer)
-
     % (units * 4) x 1
     input_weights = layer.InputWeights;
     % (units * 4) x units

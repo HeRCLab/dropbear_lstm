@@ -270,28 +270,10 @@ function [boundary_matrix] = generate_boundary (h1,h2)
 
     for i=1:size(h2,1)
         for j=h2{i,4}
-            boundary_matrix(j,i)=1;
+            boundary_matrix(j,i)=h2{i,1};
         end
     end
 
-    return
-
-    % populate the boundary matrix
-    for i=1:size(h1,1)
-        if h1{i,3}
-            points1 = h1{i,2};
-            for j=1:size(h2,1)
-                if h2{j,3}
-                    points2 = h2{j,2};
-                    if all(ismember(points1,points2))
-                        enum1 = h1{i,3};
-                        enum2 = h2{j,3};
-                        boundary_matrix(enum1,enum2)=1;
-                    end
-                end
-            end
-        end
-    end
 end
 
 function boundary_matrix = reduce_boundary(boundary_matrix)
@@ -351,40 +333,19 @@ function boundary_matrix = reduce_boundary(boundary_matrix)
                     one_locs_slave = find(boundary_matrix(:,j));
                     if ~isempty(one_locs_slave)
                         lowest_slave = one_locs_slave(end);
-                        if lowest_slave == i
-                            boundary_matrix(:,i) = zeros(size(boundary_matrix,1),1);
-                            break;
-                        end
+                        % TODO: find out why the code below that implements
+                        % the clearing optimization causes an error in the
+                        % output (i.e. different output than when not used)
+                        % if lowest_slave == i
+                        %     boundary_matrix(:,i) = zeros(size(boundary_matrix,1),1);
+                        %     break;
+                        % end
                         if lowest_master == lowest_slave % apply column transformation
-                            boundary_matrix(:,i) = double(xor(boundary_matrix(:,j),boundary_matrix(:,i)));
+                            %boundary_matrix(:,i) = double(xor(boundary_matrix(:,j),boundary_matrix(:,i)));
+                            lambda = boundary_matrix(lowest_master,i)/boundary_matrix(lowest_slave,j);
+                            boundary_matrix(:,i) = boundary_matrix(:,i) - lambda * boundary_matrix(:,j);
                             changed=1;
                             break;
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    return
-
-    %v1
-    while changed
-        % reduce the boundary matrix
-        changed = 0;
-        for i=1:size(boundary_matrix,2) % for each column...
-            one_locs_master = find(boundary_matrix(:,i)); % find the row of lowest 1
-            if ~isempty(one_locs_master)
-                lowest_master = one_locs_master(end);
-            
-                % check columns to the right if there's a match
-                for j=i+1:size(boundary_matrix,2)
-                    one_locs_slave = find(boundary_matrix(:,j));
-                    if ~isempty(one_locs_slave)
-                        lowest_slave = one_locs_slave(end);
-                        if lowest_master == lowest_slave % apply column transformation
-                            boundary_matrix(:,j) = double(xor(boundary_matrix(:,j),boundary_matrix(:,i)));
-                            changed=1;
                         end
                     end
                 end

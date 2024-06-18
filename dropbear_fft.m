@@ -1,10 +1,10 @@
 % parameters
 
-gpuDevice(2);
+gpuDevice(1);
 
 % choose a network
-MLP = 1;
-LSTM = 0;
+MLP = 0;
+LSTM = 1;
 
 % add an FFT front-end?
 use_fft = 0;
@@ -14,12 +14,12 @@ mlp_hidden_neurons = 1000;
 num_mlp_hidden_layers = 3;
 
 % if LSTM, choose units/cell and number of cells
-lstm_units = [20,20,20];
-num_lstm_cells = 3;
+lstm_units = [100];
+num_lstm_cells = 1;
 
 % if LSTM, choose other training options
 training_snippet_size = 50; % seconds
-number_of_sequence_inputs = 512; % assuming no FFT
+number_of_sequence_inputs = 20; % assuming no FFT
 number_of_training_rounds = 1; % number of passes over whole dataset
 use_higher_sample_rate_for_inputs = 0; % decouple input and output T_s
 
@@ -35,10 +35,10 @@ train_end = 60; % seconds
 window_size = .1; % seconds
 
 % choose an output sample rate
-sample_rate = 5000;
+sample_rate = 1000;
 
 % choose training time
-epochs = 100;
+epochs = 1000;
 
 [time_vibration,vibration_signal,...
     time_pin,pin_position] = read_and_clean_dataset('data_6_with_FFT.json', ...
@@ -122,12 +122,12 @@ end
 opts = trainingOptions('adam', ...
     'MaxEpochs',epochs, ...
     'GradientThreshold',1, ...
-    'InitialLearnRate',3e-4, ...
+    'InitialLearnRate',3e-3, ...
     'LearnRateSchedule','piecewise', ...
     'LearnRateDropPeriod',200, ...
     'LearnRateDropFactor',0.1, ...
     'Verbose',true,...
-    'Minibatchsize',20); % minibatchsize has no effect, since LSTMs are limited to batch size of 1((
+    'Minibatchsize',10); % minibatchsize has no effect, since LSTMs are limited to batch size of 1((
 
 %%
 
@@ -226,6 +226,8 @@ if LSTM
         end
     end
 end
+%%
+dump_weights(net);
 
 %exportONNXNetwork(net,"dropbear_lstm.onnx");
 
@@ -320,15 +322,21 @@ function [time_vibration,vibration_signal,...
     earliest_end_time = min([data.time_acceleration_data(end) data.measured_pin_location_tt(end)]);
     
     % trim signals
-    clip_start = find(data.time_acceleration_data>=latest_start_time);
-    clip_end = find(data.time_acceleration_data>=earliest_end_time);
-    data.time_acceleration_data = data.time_acceleration_data(clip_start(1):clip_end(1));
-    data.acceleration_data = data.acceleration_data(clip_start(1):clip_end(1));
+    clip_start = find(data.time_acceleration_data>latest_start_time);
+    clip_end = find(data.time_acceleration_data<earliest_end_time);
+    if isempty(clip_end)
+        clip_end = numel(data.time_acceleration_data);
+    end
+    data.time_acceleration_data = data.time_acceleration_data(clip_start(1):clip_end(end));
+    data.acceleration_data = data.acceleration_data(clip_start(1):clip_end(end));
     
-    clip_start = find(data.measured_pin_location_tt>=latest_start_time);
-    clip_end = find(data.measured_pin_location_tt>=earliest_end_time);
-    data.measured_pin_location_tt = data.measured_pin_location_tt(clip_start(1):clip_end(1));
-    data.measured_pin_location = data.measured_pin_location(clip_start(1):clip_end(1));
+    clip_start = find(data.measured_pin_location_tt>latest_start_time);
+    clip_end = find(data.measured_pin_location_tt<earliest_end_time);
+    if isempty(clip_end)
+        clip_end = numel(data.measured_pin_location_tt);
+    end
+    data.measured_pin_location_tt = data.measured_pin_location_tt(clip_start(1):clip_end(end));
+    data.measured_pin_location = data.measured_pin_location(clip_start(1):clip_end(end));
     
     % create new time axes
     if use_higher_sample_rate_for_inputs
@@ -343,8 +351,111 @@ function [time_vibration,vibration_signal,...
     time_pin = [data.measured_pin_location_tt(1):...
                         1/sample_rate:...
                         data.measured_pin_location_tt(end)];
+
+    if (time_pin(1) < time_vibration(1))
+        time_pin = time_vibration;
+    else
+        time_vibration = time_pin;
+    end
     
     % interpolate signals
     vibration_signal = interp1(data.time_acceleration_data,data.acceleration_data,time_vibration);
-    pin_position = interp1(data.measured_pin_location_tt,data.measured_pin_location,time_pin);
+    pin_position = interp1(data.measured_pin_location_tt,data.measured_pin_location,time_vibration);
+
+    myfile = fopen('dropbear.dat','w');
+
+    % write to file
+    for i=1:numel(vibration_signal)
+        fwrite(myfile,vibration_signal(i),'single');
+    end
+
+    for i=1:numel(pin_position)
+        fwrite(myfile,pin_position(i),'single');
+    end
+
+    for i=1:numel(time_vibration)
+        fwrite(myfile,time_vibration(i),'single');
+    end
+
+    fclose(myfile);
+end
+
+function [input_gate,forget_gate,output_gate,modulation_gate] = extract_weights (layer)
+
+    % (units * 4) x 1
+    input_weights = layer.InputWeights;
+    % (units * 4) x units
+    recurrent_weights = layer.RecurrentWeights;
+    % (units * 4) x 1
+    bias = layer.Bias;
+    % infer the number of units
+    num_units = size(input_weights,1)/4;
+    % get values for current gate (since they are packed)
+    
+    segment = perms(1);
+    chunk = num_units*segment+1:num_units*(segment+1);
+    forget_gate.input_weights = input_weights(chunk,:);
+    forget_gate.recurrent_weights = recurrent_weights(chunk,:);
+    forget_gate.bias = bias(chunk,1);
+    
+    segment = perms(2);
+    chunk = num_units*segment+1:num_units*(segment+1);
+    input_gate.input_weights = input_weights(chunk,:);
+    input_gate.recurrent_weights = recurrent_weights(chunk,:);
+    input_gate.bias = bias(chunk,1);
+
+    segment = perms(3);
+    chunk = num_units*segment+1:num_units*(segment+1);
+    output_gate.input_weights = input_weights(chunk,:);
+    output_gate.recurrent_weights = recurrent_weights(chunk,:);
+    output_gate.bias = bias(chunk,1);
+
+    segment = perms(4);
+    chunk = num_units*segment+1:num_units*(segment+1);
+    modulation_gate.input_weights = input_weights(chunk,:);
+    modulation_gate.recurrent_weights = recurrent_weights(chunk,:);
+    modulation_gate.bias = bias(chunk,1);
+end
+
+function [] = write_weights_to_file (myfile,recurrent_weights,input_weights_bias)
+
+    for i=1:size(recurrent_weights,1)
+        for j=1:size(recurrent_weights,2)
+            fwrite(myfile,recurrent_weights(i,j),'single');
+        end
+    end
+
+    for i=1:size(input_weights,1)
+        for j=1:size(input_weights,2)
+            fwrite(myfile,input_weights(i,j),'single');
+        end
+    end
+
+    for i=1:numel(bias)
+        fwrite(myfile,bias(i),'single');
+    end
+end
+
+function [] = dump_weights (net)
+
+    % allocate hidden and cell states for all LSTM layers
+	for i = 1:size(net.Layers,1)
+        layer = net.Layers(i);
+        if strcmp(class(layer),'nnet.cnn.layer.LSTMLayer')
+            [input_gate,forget_gate,output_gate,modulation_gate] = extract_weights (layer);
+        elseif strcmp(class(layer),'nnet.cnn.layer.FullyConnectedLayer')
+            fully_connected_weights = layer.Weights;
+            fully_connected_bias = layer.Bias;
+        end
+    end
+
+    % write to file
+    myfile=fopen("weights.dat","w+");
+
+    write_weights_to_file (myfile,input_gate.recurrent_weights,input_gate.input_weights,input_gate.bias);
+    write_weights_to_file (myfile,forget_gate.recurrent_weights,forget_gate.input_weights,forget_gate.bias);
+    write_weights_to_file (myfile,output_gate.recurrent_weights,output_gate.input_weights,output_gate.bias);
+    write_weights_to_file (myfile,modulation_gate.recurrent_weights,modulation_gate.input_weights,modulation_gate.bias);
+
+    fclose(myfile);
 end

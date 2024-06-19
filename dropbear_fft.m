@@ -24,7 +24,7 @@ number_of_training_rounds = 1; % number of passes over whole dataset
 use_higher_sample_rate_for_inputs = 0; % decouple input and output T_s
 
 % if LSTM, choose whether to use built-in or hand-written forward pass code
-use_my_predict = 0;
+use_my_predict = 1;
 
 % choose a portion of the signal on which to train
 % note this different from training snippet size
@@ -228,7 +228,7 @@ if LSTM
 end
 %%
 dump_weights(net);
-
+%%
 %exportONNXNetwork(net,"dropbear_lstm.onnx");
 
 % predict training data

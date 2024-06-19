@@ -426,9 +426,11 @@ function [] = write_weights_to_file (myfile,recurrent_weights,input_weights,bias
         end
     end
 
-    for i=1:size(input_weights,1)
-        for j=1:size(input_weights,2)
-            fwrite(myfile,input_weights(i,j),'single');
+    if ~isempty(recurrent_weights)
+        for i=1:size(input_weights,1)
+            for j=1:size(input_weights,2)
+                fwrite(myfile,input_weights(i,j),'single');
+            end
         end
     end
 
@@ -451,12 +453,14 @@ function [] = dump_weights (net)
     end
 
     % write to file
-    myfile=fopen("weights.dat","w+");
+    myfile=fopen("weights.dat","w");
 
     write_weights_to_file (myfile,input_gate.recurrent_weights,input_gate.input_weights,input_gate.bias);
     write_weights_to_file (myfile,forget_gate.recurrent_weights,forget_gate.input_weights,forget_gate.bias);
     write_weights_to_file (myfile,output_gate.recurrent_weights,output_gate.input_weights,output_gate.bias);
     write_weights_to_file (myfile,modulation_gate.recurrent_weights,modulation_gate.input_weights,modulation_gate.bias);
+
+    write_weights_to_file (myfile,fully_connected_weights,[],fully_connected_bias);
 
     fclose(myfile);
 end
